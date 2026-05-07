@@ -5,8 +5,8 @@ import AvulsionClient from './AvulsionClient';
 export default function AvulsionPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
-        <div className="text-white text-xl">Loading avulsion protocol...</div>
+      <div className="min-h-screen bg-[#0a1428] flex items-center justify-center text-white">
+        <div className="text-xl">Loading avulsion protocol...</div>
       </div>
     }>
       <AvulsionClient />
