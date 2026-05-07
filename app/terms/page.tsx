@@ -127,6 +127,16 @@ export default function TermsOfService() {
           <Link href="/contact" className="hover:text-white transition">Contact Us</Link>
           <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
         </div>
+
+        {/* Support Email */}
+  <div className="mt-6 text-xs">
+    Need help? Contact us at{" "}
+    <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
+      support@endoprognosis.org
+    </a>
+  </div>
+
+  
         <p className="mt-6 text-xs">© 2026 Endoprognosis • All Rights Reserved</p>
       </div>
     </div>
