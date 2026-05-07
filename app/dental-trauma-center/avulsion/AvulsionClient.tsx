@@ -193,7 +193,7 @@ export default function AvulsionClient() {
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-5xl font-bold flex items-center gap-4">
-                  💥 Avulsion of Permanent Teeth
+                   Avulsion of Permanent Teeth
                 </h1>
                 <p className="text-2xl text-rose-300 mt-3">Personalized Evidence-Based Protocol</p>
               </div>
