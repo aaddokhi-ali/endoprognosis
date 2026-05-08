@@ -13,9 +13,14 @@ export default function RestorativeRecommendation() {
   const [rec, setRec] = useState("");
   const [clinicianHTML, setClinicianHTML] = useState("");
   const [warningHTML, setWarningHTML] = useState("");
+  const [isClient, setIsClient] = useState(false);   // ← Only this line was added
 
   const { user } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    setIsClient(true);   // ← Only this line was added
+  }, []);
 
   useEffect(() => {
     const savedData = localStorage.getItem("restorativeData");
@@ -85,6 +90,15 @@ export default function RestorativeRecommendation() {
   }, []);
 
   const toggleTheme = () => setIsDark(!isDark);
+
+  // Show loading state until client is ready (prevents flash)
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
+        <div className="text-white text-xl">Loading restorative recommendation...</div>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
@@ -214,13 +228,13 @@ export default function RestorativeRecommendation() {
         </div>
 
         {/* Support Email */}
-  <div className="mt-6 text-xs">
-    Need help? Contact us at{" "}
-    <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
-      support@endoprognosis.org
-    </a>
-  </div>
-  
+        <div className="mt-6 text-xs">
+          Need help? Contact us at{" "}
+          <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
+            support@endoprognosis.org
+          </a>
+        </div>
+        
         <p className="mt-6 text-xs">© 2026 Endoprognosis • All Rights Reserved</p>
       </div>
     </div>
