@@ -1,7 +1,7 @@
 // app/forgot-password/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
@@ -17,11 +17,12 @@ export default function ForgotPasswordPage() {
   const { resetPassword, user, clearError } = useAuth();
   const router = useRouter();
 
-  // Redirect if already logged in
-  if (user) {
-    router.push("/home");
-    return null;
-  }
+  // Redirect if already logged in - Fixed version
+  useEffect(() => {
+    if (user) {
+      router.push("/home");
+    }
+  }, [user, router]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +55,11 @@ export default function ForgotPasswordPage() {
   // Show full loading screen while sending email
   if (loading) {
     return <LoadingScreen message="Sending reset link..." />;
+  }
+
+  // Prevent flash of content if user is logged in
+  if (user) {
+    return <LoadingScreen message="Redirecting..." />;
   }
 
   return (
