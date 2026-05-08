@@ -1,16 +1,15 @@
 // app/predictor/result/firebaseConfig.ts
-
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCpVnYczXq9rkYfXuLzqnNRIs2B98Fc58g",
-  authDomain: "endoprognosis.firebaseapp.com",
-  projectId: "endoprognosis",
-  storageBucket: "endoprognosis.firebasestorage.app",
-  messagingSenderId: "532629764609",
-  appId: "1:532629764609:web:cd8f39794fbd079b731e00",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase
