@@ -6,6 +6,9 @@ import { useTrauma } from "../../context/TraumaContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+// Force dynamic rendering to avoid useSearchParams() prerender error
+export const dynamic = 'force-dynamic';
+
 export default function AdvancedFractures() {
   const { user } = useAuth();
   const { patientInfo, saveCase, loadCaseByPhone } = useTrauma();
