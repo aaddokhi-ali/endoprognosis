@@ -1,5 +1,5 @@
 // app/layout.tsx
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./context/AuthContext";
@@ -24,6 +24,17 @@ export const metadata: Metadata = {
   },
 };
 
+// ==================== NEW MOBILE OPTIMIZATION ====================
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1.0,
+  userScalable: true,        // Allow slight zoom if needed
+  viewportFit: "cover",
+  themeColor: "#0a1428",     // Matches your dark background
+};
+// ============================================================
+
 export default function RootLayout({
   children,
 }: {
@@ -36,7 +47,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body 
-        className="bg-[#0a1428] text-white"
+        className="bg-[#0a1428] text-white antialiased"
         suppressHydrationWarning
       >
         <AuthProvider>

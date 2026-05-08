@@ -74,7 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(userCredential.user);
+      
+      const actionCodeSettings = {
+        url: `${window.location.origin}/login?emailVerified=true`,
+        handleCodeInApp: true,
+      };
+
+      await sendEmailVerification(userCredential.user, actionCodeSettings);
       await signOut(auth); // Keep user logged out until verified
     } catch (err: any) {
       const message = getFriendlyErrorMessage(err);
@@ -117,7 +123,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user.emailVerified) throw new Error("Email is already verified");
 
     try {
-      await sendEmailVerification(user);
+      const actionCodeSettings = {
+        url: `${window.location.origin}/login?emailVerified=true`,
+        handleCodeInApp: true,
+      };
+
+      await sendEmailVerification(user, actionCodeSettings);
       alert("Verification email sent successfully!");
     } catch (err: any) {
       setError(getFriendlyErrorMessage(err));
