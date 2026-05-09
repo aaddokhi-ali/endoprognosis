@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";   // ← Added
+import { auth } from "../firebaseConfig"; // ← Added
 import LoadingScreen from "../components/LoadingScreen";
 
 export default function LoginPage() {
@@ -16,7 +18,7 @@ export default function LoginPage() {
   const { login, user, loading: authLoading, error: authError, clearError } = useAuth();
   const router = useRouter();
 
-  // Clear error when auth context error changes (but don't show old errors)
+  // Clear error when auth context error changes
   useEffect(() => {
     if (authError) {
       setError(authError);
@@ -26,15 +28,15 @@ export default function LoginPage() {
   // Auto redirect when user is properly logged in and verified
   useEffect(() => {
     if (!authLoading && user?.emailVerified) {
-      router.replace("/home");   // Use replace instead of push
+      router.replace("/home");
     }
   }, [user, authLoading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    setError("");           // Clear local error
-    clearError();           // Clear context error
+    setError("");
+    clearError();
 
     if (!email || !password) {
       setError("Please enter both email and password.");
@@ -45,12 +47,9 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      
-      // Small delay to let state settle before redirect
       setTimeout(() => {
         router.replace("/home");
       }, 300);
-
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -58,14 +57,29 @@ export default function LoginPage() {
     }
   };
 
-  const handleGuestAccess = () => {
-    setLoading(true);   // Reuse loading state for guest too
-    localStorage.setItem("isGuest", "true");
-    localStorage.setItem("guestMode", "true");
+  const handleGuestAccess = async () => {
+    setLoading(true);
 
+    try {
+      // Force clear any existing Firebase session
+      await signOut(auth).catch(() => {}); // Ignore errors if already signed out
+
+      // Clear any old user data
+      localStorage.removeItem("isGuest");
+      localStorage.removeItem("guestMode");
+
+      // Set fresh guest flags
+      localStorage.setItem("isGuest", "true");
+      localStorage.setItem("guestMode", "true");
+
+    } catch (err) {
+      console.error("Error during guest transition:", err);
+    }
+
+    // Small delay to let Firebase state clear
     setTimeout(() => {
       router.push("/guest");
-    }, 700);
+    }, 500);
   };
 
   // Clear error when user starts typing
@@ -175,7 +189,8 @@ export default function LoginPage() {
 
             <button
               onClick={handleGuestAccess}
-              className="w-full border border-white/40 hover:border-white/70 text-white font-medium py-4 rounded-2xl transition"
+              disabled={loading}
+              className="w-full border border-white/40 hover:border-white/70 text-white font-medium py-4 rounded-2xl transition disabled:opacity-70"
             >
               Continue as Guest
             </button>

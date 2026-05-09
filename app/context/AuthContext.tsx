@@ -48,20 +48,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Listen to auth state changes with stronger refresh
-  useEffect(() => {
-    const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
-      if (currentUser) {
+ useEffect(() => {
+  const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
+    if (currentUser) {
+      try {
         await currentUser.reload();
-        await currentUser.getIdToken(true);   // Force fresh token
+        await currentUser.getIdToken(); // normal, non‑forced refresh
         setUser(currentUser);
-      } else {
-        setUser(null);
+      } catch (err: any) {
+        console.error("Token refresh error:", err);
+        if (err.code === "auth/quota-exceeded") {
+          // fallback: use cached token for now
+          setUser(currentUser);
+        }
       }
-      setLoading(false);
-    });
+    } else {
+      setUser(null);
+    }
+    setLoading(false);
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
+
 
   const getFriendlyErrorMessage = (err: any): string => {
     const code = err?.code || '';
