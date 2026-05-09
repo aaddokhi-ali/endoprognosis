@@ -13,7 +13,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
-  onIdTokenChanged,        // Changed from onAuthStateChanged
+  onIdTokenChanged,
   setPersistence,
   browserLocalPersistence,
   sendEmailVerification,
@@ -42,16 +42,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Set persistence once
   useEffect(() => {
     setPersistence(auth, browserLocalPersistence).catch(console.error);
   }, []);
 
-  // ==================== IMPROVED AUTH LISTENER ====================
+  // Listen to auth state changes
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       if (currentUser) {
-        await currentUser.reload();           // Force latest data
-        setUser({ ...currentUser });          // Create new object to trigger re-render
+        await currentUser.reload();   // Always refresh user data
+        setUser(currentUser);
       } else {
         setUser(null);
       }
@@ -60,11 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => unsubscribe();
   }, []);
-  // ============================================================
 
   const getFriendlyErrorMessage = (err: any): string => {
     const code = err?.code || '';
-    
     if (code.includes('email-already-in-use')) return "This email is already registered. Please login instead.";
     if (code.includes('invalid-email')) return "Please enter a valid email address.";
     if (code.includes('weak-password')) return "Password should be at least 6 characters long.";
@@ -72,21 +71,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (code.includes('too-many-requests')) return "Too many failed attempts. Please try again later.";
     if (code.includes('network-request-failed')) return "Network error. Please check your internet connection.";
 
-    return err?.message?.replace('Firebase: ', '') || "Something went wrong. Please try again.";
+    return err?.message?.replace('Firebase: ', '') || "Something went wrong.";
   };
+
+  // Reusable action code settings
+  const getActionCodeSettings = () => ({
+    url: `${window.location.origin}/verify-email`,
+    handleCodeInApp: true,
+  });
 
   const register = async (email: string, password: string) => {
     setError(null);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
-      const actionCodeSettings = {
-        url: `${window.location.origin}/login?emailVerified=true`,
-        handleCodeInApp: true,
-      };
-
-      await sendEmailVerification(userCredential.user, actionCodeSettings);
-      await signOut(auth);
+      await sendEmailVerification(userCredential.user, getActionCodeSettings());
+      await signOut(auth);                    // Good practice: don't keep user signed in after register
     } catch (err: any) {
       const message = getFriendlyErrorMessage(err);
       setError(message);
@@ -98,14 +98,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const loggedInUser = userCredential.user;
+      let loggedInUser = userCredential.user;
 
+      // Strong reload strategy for Netlify/Firebase sync issues
       await loggedInUser.reload();
       await loggedInUser.getIdToken(true);
 
+      // Extra safety check with retry (helps on production)
       if (!loggedInUser.emailVerified) {
-        await signOut(auth);
-        throw new Error("Please verify your email first. Check your inbox and spam folder.");
+        await new Promise(resolve => setTimeout(resolve, 800)); // Small delay
+        await loggedInUser.reload();
+        await loggedInUser.getIdToken(true);
+
+        if (!loggedInUser.emailVerified) {
+          await signOut(auth);
+          throw new Error("Please verify your email first. Check your inbox and spam folder.");
+        }
       }
 
       localStorage.removeItem("isGuest");
@@ -131,13 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user.emailVerified) throw new Error("Email is already verified");
 
     try {
-      const actionCodeSettings = {
-        url: `${window.location.origin}/login?emailVerified=true`,
-        handleCodeInApp: true,
-      };
-
-      await sendEmailVerification(user, actionCodeSettings);
-      alert("Verification email sent successfully!");
+      await sendEmailVerification(user, getActionCodeSettings());
     } catch (err: any) {
       setError(getFriendlyErrorMessage(err));
       throw err;
@@ -157,19 +159,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearError = () => setError(null);
 
   return (
-    <AuthContext.Provider 
-      value={{ 
-        user, 
-        loading, 
-        login, 
-        register, 
-        logout, 
-        sendVerificationEmail,
-        resetPassword,
-        error,
-        clearError 
-      }}
-    >
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      login, 
+      register, 
+      logout, 
+      sendVerificationEmail, 
+      resetPassword, 
+      error, 
+      clearError 
+    }}>
       {children}
     </AuthContext.Provider>
   );
