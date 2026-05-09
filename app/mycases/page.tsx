@@ -239,6 +239,8 @@ export default function MyCases() {
     );
   }, [filteredCases]);
 
+   // ==================== EDIT & DELETE FUNCTIONS ====================
+
   const startEditing = (c: SavedCase) => {
     setEditingId(c.id);
     setEditForm({
@@ -255,11 +257,15 @@ export default function MyCases() {
   };
 
   const saveEdit = async (caseId: string) => {
-    if (!user) return;
+    if (!user) {
+      alert("You must be logged in to edit cases.");
+      return;
+    }
 
     try {
       const caseRef = doc(db, "cases", caseId);
-      await updateDoc(caseRef, {
+      
+      const updateData = {
         caseName: editForm.caseName || "",
         phoneNumber: editForm.phoneNumber || "",
         treatmentStatus: editForm.treatmentStatus || "No Treatment",
@@ -269,23 +275,30 @@ export default function MyCases() {
         ageGroup: editForm.ageGroup || "",
         asa: editForm.asa || "",
         periodontalStatus: editForm.periodontalStatus || "",
-      });
+        updatedAt: new Date(),
+      };
+
+      await updateDoc(caseRef, updateData);
 
       setCases(prev => prev.map(c => 
-        c.id === caseId ? { ...c, ...editForm } : c
+        c.id === caseId ? { ...c, ...updateData } : c
       ));
 
       setEditingId(null);
       setEditForm({});
-      alert("Case updated successfully!");
-    } catch (err) {
+      alert("✅ Case updated successfully!");
+    } catch (err: any) {
       console.error("Update failed:", err);
-      alert("Failed to update case. Please try again.");
+      if (err.code === "permission-denied") {
+        alert("Permission denied. Please log in again.");
+      } else {
+        alert("Failed to update case. Please check console.");
+      }
     }
   };
 
   const deleteCase = async (caseId: string) => {
-    if (!confirm("Are you sure you want to permanently delete this case? This action cannot be undone.")) {
+    if (!confirm("Are you sure you want to permanently delete this case?")) {
       return;
     }
 
@@ -293,9 +306,9 @@ export default function MyCases() {
       await deleteDoc(doc(db, "cases", caseId));
       setCases(prev => prev.filter(c => c.id !== caseId));
       alert("Case deleted successfully.");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Delete failed:", err);
-      alert("Failed to delete case.");
+      alert("Failed to delete case. Please try again.");
     }
   };
 

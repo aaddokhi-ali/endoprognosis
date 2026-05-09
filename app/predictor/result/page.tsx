@@ -77,6 +77,11 @@ export default function PredictorResult() {
   };
 
   const handleSaveCase = async () => {
+    if (!user?.uid) {
+      alert("Please log in to save cases.");
+      return;
+    }
+
     if (!caseName?.trim() || !phoneNumber?.trim()) {
       alert("Please fill in Case Name and Phone Number");
       return;
@@ -122,8 +127,10 @@ export default function PredictorResult() {
         isPractical: result.isPractical ?? false,
         affectingFactors: result.affectingFactors || [],
 
+        type: "predictor",                    // ← Added
+        userId: user.uid,                     // ← Ensured
         createdAt: serverTimestamp(),
-        userId: user?.uid,
+        updatedAt: serverTimestamp(),         // ← Added
         savedAt: new Date().toISOString(),
         isGuest: !user,
       };
@@ -138,7 +145,14 @@ export default function PredictorResult() {
 
     } catch (error: any) {
       console.error("Save failed:", error);
-      alert("Failed to save the case. Please try again.");
+      
+      if (error.code === "permission-denied") {
+        alert("Permission denied. Please make sure you are logged in.");
+      } else if (error.code === "unavailable") {
+        alert("Network error. Please check your connection and try again.");
+      } else {
+        alert("Failed to save the case. Please try again.");
+      }
     } finally {
       setSaving(false);
     }
