@@ -12,29 +12,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [guestLoading, setGuestLoading] = useState(false);
 
   const { login, user, loading: authLoading, error: authError, clearError } = useAuth();
   const router = useRouter();
 
-  // Sync auth context error with local error state
+  // Clear error when auth context error changes (but don't show old errors)
   useEffect(() => {
     if (authError) {
       setError(authError);
     }
   }, [authError]);
 
-  // Redirect if already logged in
+  // Auto redirect when user is properly logged in and verified
   useEffect(() => {
-    if (!authLoading && user) {
-      router.push("/home");
+    if (!authLoading && user?.emailVerified) {
+      router.replace("/home");   // Use replace instead of push
     }
   }, [user, authLoading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    clearError(); // Clear any previous error from context
+    
+    setError("");           // Clear local error
+    clearError();           // Clear context error
 
     if (!email || !password) {
       setError("Please enter both email and password.");
@@ -45,7 +45,12 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push("/home");
+      
+      // Small delay to let state settle before redirect
+      setTimeout(() => {
+        router.replace("/home");
+      }, 300);
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -54,8 +59,7 @@ export default function LoginPage() {
   };
 
   const handleGuestAccess = () => {
-    setGuestLoading(true);
-    
+    setLoading(true);   // Reuse loading state for guest too
     localStorage.setItem("isGuest", "true");
     localStorage.setItem("guestMode", "true");
 
@@ -75,20 +79,8 @@ export default function LoginPage() {
     if (error) setError("");
   };
 
-  // Show full loading screen while signing in
-  if (loading) {
+  if (loading || authLoading) {
     return <LoadingScreen message="Signing you in..." />;
-  }
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
-        <div className="text-white text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-[#10b981] border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-lg">Loading...</p>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -107,7 +99,6 @@ export default function LoginPage() {
 
       <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
         <div className="w-full max-w-md">
-          {/* Logo */}
           <div className="flex justify-center mb-10">
             <Image
               src="https://iili.io/B6RcxlS.png"
@@ -158,7 +149,6 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Forgot Password Link */}
               <div className="text-right">
                 <Link 
                   href="/forgot-password" 
@@ -173,7 +163,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full bg-[#10b981] hover:bg-[#0ea76e] text-black font-semibold py-4 rounded-2xl text-lg transition disabled:opacity-70"
               >
-                {loading ? "Signing in..." : "Sign In"}
+                Sign In
               </button>
             </form>
 
@@ -185,10 +175,9 @@ export default function LoginPage() {
 
             <button
               onClick={handleGuestAccess}
-              disabled={guestLoading}
-              className="w-full border border-white/40 hover:border-white/70 text-white font-medium py-4 rounded-2xl transition disabled:opacity-70"
+              className="w-full border border-white/40 hover:border-white/70 text-white font-medium py-4 rounded-2xl transition"
             >
-              {guestLoading ? "Entering as Guest..." : "Continue as Guest"}
+              Continue as Guest
             </button>
 
             <div className="mt-8 text-center">
