@@ -89,11 +89,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ==================== UPDATED LOGIN FUNCTION ====================
   const login = async (email: string, password: string) => {
     setError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const loggedInUser = userCredential.user;
+
+      // Force refresh to get the latest emailVerified status
+      await loggedInUser.reload();
 
       if (!loggedInUser.emailVerified) {
         await signOut(auth);
@@ -108,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(message);
     }
   };
+  // ============================================================
 
   const logout = async () => {
     setError(null);
