@@ -143,19 +143,20 @@ export default function PredictorResult() {
       setPhoneNumber("");
       setFurtherNote("");
 
-    } catch (error: any) {
+        } catch (error: any) {
       console.error("Save failed:", error);
-      
+
       if (error.code === "permission-denied") {
-        alert("Permission denied. Please make sure you are logged in.");
+        alert("Permission denied. Check your Firestore rules or authentication.");
       } else if (error.code === "unavailable") {
-        alert("Network error. Please check your connection and try again.");
+        alert("Network error. Please check your connection.");
       } else {
-        alert("Failed to save the case. Please try again.");
+        alert(`Unexpected error: ${error.message}`);
       }
     } finally {
       setSaving(false);
     }
+
   };
 
   if (!result) {
