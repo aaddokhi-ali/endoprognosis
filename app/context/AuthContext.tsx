@@ -13,7 +13,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged,
+  onIdTokenChanged,        // Changed from onAuthStateChanged
   setPersistence,
   browserLocalPersistence,
   sendEmailVerification,
@@ -46,14 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPersistence(auth, browserLocalPersistence).catch(console.error);
   }, []);
 
+  // ==================== IMPROVED AUTH LISTENER ====================
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        await currentUser.reload();           // Force latest data
+        setUser({ ...currentUser });          // Create new object to trigger re-render
+      } else {
+        setUser(null);
+      }
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+  // ============================================================
 
   const getFriendlyErrorMessage = (err: any): string => {
     const code = err?.code || '';
@@ -93,7 +100,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const loggedInUser = userCredential.user;
 
-      // Strong refresh
       await loggedInUser.reload();
       await loggedInUser.getIdToken(true);
 
