@@ -47,11 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPersistence(auth, browserLocalPersistence).catch(console.error);
   }, []);
 
-  // Listen to auth state changes
+  // Listen to auth state changes with stronger refresh
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
       if (currentUser) {
-        await currentUser.reload();   // Always refresh user data
+        await currentUser.reload();
+        await currentUser.getIdToken(true);   // Force fresh token
         setUser(currentUser);
       } else {
         setUser(null);
@@ -86,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
       await sendEmailVerification(userCredential.user, getActionCodeSettings());
-      await signOut(auth);                    // Good practice: don't keep user signed in after register
+      await signOut(auth);
     } catch (err: any) {
       const message = getFriendlyErrorMessage(err);
       setError(message);
@@ -100,24 +101,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       let loggedInUser = userCredential.user;
 
-      // Strong reload strategy for Netlify/Firebase sync issues
+      // === STRONG RETRY LOGIC FOR NETLIFY / PRODUCTION ===
       await loggedInUser.reload();
       await loggedInUser.getIdToken(true);
 
-      // Extra safety check with retry (helps on production)
-      if (!loggedInUser.emailVerified) {
-        await new Promise(resolve => setTimeout(resolve, 800)); // Small delay
+      let attempts = 0;
+      const maxAttempts = 5;
+
+      while (!loggedInUser.emailVerified && attempts < maxAttempts) {
+        attempts++;
+        console.log(`Verification check attempt ${attempts}/${maxAttempts}`);
+        
+        await new Promise(resolve => setTimeout(resolve, 700)); // Wait 700ms
         await loggedInUser.reload();
         await loggedInUser.getIdToken(true);
-
-        if (!loggedInUser.emailVerified) {
-          await signOut(auth);
-          throw new Error("Please verify your email first. Check your inbox and spam folder.");
-        }
       }
 
+      if (!loggedInUser.emailVerified) {
+        await signOut(auth);
+        throw new Error("Please verify your email first. Check your inbox and spam folder.");
+      }
+
+      // Success
       localStorage.removeItem("isGuest");
       localStorage.removeItem("guestMode");
+
     } catch (err: any) {
       const message = getFriendlyErrorMessage(err);
       setError(message);
