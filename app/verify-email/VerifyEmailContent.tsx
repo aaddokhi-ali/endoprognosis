@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { applyActionCode, getAuth } from "firebase/auth";
+import { applyActionCode, getAuth, reload, getIdToken } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import Image from "next/image";
 import Link from "next/link";
@@ -19,28 +19,40 @@ export default function VerifyEmailContent() {
     const verifyEmail = async () => {
       if (!oobCode) {
         setStatus("error");
-        setMessage("Invalid or expired verification link.");
+        setMessage("Invalid verification link.");
         return;
       }
 
       try {
         const auth = getAuth();
+        
+        // 1. Apply the verification code
         await applyActionCode(auth, oobCode);
-
-        if (user) await user.reload();
+        
+        // 2. If user is signed in, force refresh
+        if (user) {
+          await reload(user);
+          await getIdToken(user, true);
+        } else {
+          // Sometimes we need to sign in first to refresh
+          console.log("No current user - verification applied but may need login");
+        }
 
         setStatus("success");
-        setMessage("Your email has been successfully verified!");
+        setMessage("Your email has been successfully verified! 🎉");
 
-        setTimeout(() => router.replace("/login"), 2200);
+        // Auto redirect
+        setTimeout(() => router.replace("/login"), 2500);
+
       } catch (err: any) {
-        console.error("Verification error:", err);
+        console.error("Verification Error:", err);
         setStatus("error");
-        setMessage(
-          err.code === "auth/expired-action-code"
-            ? "This verification link has expired. Please request a new one."
-            : "Verification failed. Please try again."
-        );
+        
+        if (err.code === "auth/expired-action-code") {
+          setMessage("This verification link has expired. Please register again or request a new link.");
+        } else {
+          setMessage("Verification failed. Please try clicking the link again or contact support.");
+        }
       }
     };
 
@@ -52,7 +64,7 @@ export default function VerifyEmailContent() {
       <div className="max-w-md w-full text-center">
         <Image
           src="https://iili.io/B6RcxlS.png"
-          alt="Endoprognosis Logo"
+          alt="Logo"
           width={220}
           height={80}
           className="mx-auto mb-10"
@@ -64,30 +76,20 @@ export default function VerifyEmailContent() {
         {status === "error" && <div className="text-6xl mb-8">⚠️</div>}
 
         <h2 className={`text-3xl font-bold mb-4 ${
-          status === "success" ? "text-[#10b981]" : 
-          status === "error" ? "text-red-400" : "text-white"
+          status === "success" ? "text-[#10b981]" : status === "error" ? "text-red-400" : "text-white"
         }`}>
           {status === "success" ? "Email Verified Successfully!" : 
-           status === "error" ? "Verification Failed" : "Verifying Email..."}
+           status === "error" ? "Verification Failed" : "Verifying..."}
         </h2>
 
-        <p className="text-gray-300 mb-8 text-lg leading-relaxed">{message}</p>
+        <p className="text-gray-300 mb-8 text-lg">{message}</p>
 
-        {status === "success" && (
+        {status !== "loading" && (
           <Link
             href="/login"
             className="inline-block bg-[#10b981] hover:bg-[#0ea76e] text-black font-semibold px-12 py-4 rounded-2xl text-lg transition"
           >
-            Continue to Login
-          </Link>
-        )}
-
-        {status === "error" && (
-          <Link
-            href="/login"
-            className="inline-block bg-white/10 hover:bg-white/20 px-10 py-4 rounded-2xl text-white font-medium"
-          >
-            Back to Login
+            Go to Login
           </Link>
         )}
       </div>
