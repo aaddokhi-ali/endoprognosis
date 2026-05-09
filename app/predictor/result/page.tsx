@@ -21,28 +21,32 @@ export default function PredictorResult() {
   const { user } = useAuth();
   const router = useRouter();
 
+  // Load saved predictor result from localStorage
   useEffect(() => {
     const savedResult = localStorage.getItem("lastCalculationResult");
     if (savedResult) {
       try {
         const parsed = JSON.parse(savedResult);
 
-        let factors = Array.isArray(parsed.affectingFactors) 
-          ? [...parsed.affectingFactors] 
+        let factors = Array.isArray(parsed.affectingFactors)
+          ? [...parsed.affectingFactors]
           : [];
 
-        factors = factors.filter(f => 
-          !f.includes("Compromised coronal structure") &&
-          !f.includes("Remaining coronal structure")
+        // Remove duplicates in text
+        factors = factors.filter(
+          (f) =>
+            !f.includes("Compromised coronal structure") &&
+            !f.includes("Remaining coronal structure")
         );
 
-        const structureFactor = factors.find(f => 
-          f.includes("% loss of tooth structure") || 
-          f.includes("Adequate remaining tooth structure")
+        const structureFactor = factors.find(
+          (f) =>
+            f.includes("% loss of tooth structure") ||
+            f.includes("Adequate remaining tooth structure")
         );
-        
+
         if (structureFactor) {
-          factors = [structureFactor, ...factors.filter(f => f !== structureFactor)];
+          factors = [structureFactor, ...factors.filter((f) => f !== structureFactor)];
         }
 
         const finalResult = { ...parsed, affectingFactors: factors.slice(0, 6) };
@@ -69,7 +73,7 @@ export default function PredictorResult() {
       ferruleWalls: result.ferruleWalls || {},
       oralHygiene: result.formData?.oralHygiene || "0",
       perio: result.formData?.perio || "0",
-      fullResult: result   // ← Full result saved for back navigation
+      fullResult: result,
     };
 
     localStorage.setItem("restorativeData", JSON.stringify(restorativeData));
@@ -87,9 +91,12 @@ export default function PredictorResult() {
       return;
     }
 
+    // Prevent double-click duplicates
+    if (saving) return;
     setSaving(true);
 
     try {
+      // Build case data excluding any stray id
       const caseData = {
         caseName: caseName.trim(),
         phoneNumber: phoneNumber.trim(),
@@ -127,23 +134,26 @@ export default function PredictorResult() {
         isPractical: result.isPractical ?? false,
         affectingFactors: result.affectingFactors || [],
 
-        type: "predictor",                    // ← Added
-        userId: user.uid,                     // ← Ensured
+        type: "predictor",
+        userId: user.uid,
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),         // ← Added
+        updatedAt: serverTimestamp(),
         savedAt: new Date().toISOString(),
         isGuest: !user,
       };
 
-      await addDoc(collection(db, "cases"), caseData);
+      // Ensure no lingering "id" field causes duplicate error
+      delete (caseData as any).id;
+
+      const casesRef = collection(db, "cases");
+      await addDoc(casesRef, caseData);
 
       alert("✅ Case saved successfully!");
       setShowSaveModal(false);
       setCaseName("");
       setPhoneNumber("");
       setFurtherNote("");
-
-        } catch (error: any) {
+    } catch (error: any) {
       console.error("Save failed:", error);
 
       if (error.code === "permission-denied") {
@@ -156,7 +166,6 @@ export default function PredictorResult() {
     } finally {
       setSaving(false);
     }
-
   };
 
   if (!result) {
@@ -179,11 +188,12 @@ export default function PredictorResult() {
   return (
     <ProtectedRoute>
       <Navigation />
-
       <div className="min-h-screen bg-[#0a1428] text-white pb-20">
         {/* Hero Section */}
-        <div className="relative h-[420px] bg-cover bg-center" 
-             style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')" }}>
+        <div
+          className="relative h-[420px] bg-cover bg-center"
+          style={{ backgroundImage: "url('[iili.io](https://iili.io/Bw4dt99.jpg)')" }}
+        >
           <div className="absolute inset-0 bg-black/75"></div>
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
             <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-[#0f6cbd] via-[#10b981] to-[#0f6cbd] bg-clip-text text-transparent">
@@ -195,8 +205,8 @@ export default function PredictorResult() {
 
         <div className="max-w-4xl mx-auto px-6 py-12">
           <div className="flex flex-wrap gap-4 mb-10">
-            <Link 
-              href="/predictor" 
+            <Link
+              href="/predictor"
               className="bg-gray-700 hover:bg-gray-600 px-8 py-4 rounded-2xl text-lg font-semibold flex items-center gap-2 transition"
             >
               ← New Case
@@ -205,14 +215,19 @@ export default function PredictorResult() {
             {user && (
               <button
                 onClick={() => setShowSaveModal(true)}
-                className="bg-[#10b981] hover:bg-[#0ea46c] px-10 py-4 rounded-2xl text-lg font-semibold flex items-center gap-3 transition-all"
+                className={`px-10 py-4 rounded-2xl text-lg font-semibold flex items-center gap-3 transition-all ${
+                  saving
+                    ? "bg-gray-500 cursor-not-allowed"
+                    : "bg-[#10b981] hover:bg-[#0ea46c]"
+                }`}
+                disabled={saving}
               >
-                💾 Save This Case
+                {saving ? "Saving..." : "💾 Save This Case"}
               </button>
             )}
 
             {user && (
-              <Link 
+              <Link
                 href="/mycases"
                 className="bg-white/10 hover:bg-white/20 px-8 py-4 rounded-2xl text-lg font-semibold transition"
               >
@@ -227,8 +242,11 @@ export default function PredictorResult() {
 
             <div className="text-center mb-12">
               <p className="text-xl leading-relaxed text-gray-200">
-                Based on the survival calculation, the probability of retaining this tooth over the next 4 years is approximately <strong>{survival}%</strong>. 
-                This estimate depends on the quality of the final restoration, the patient’s compliance with oral hygiene measures, absence of parafunctional habits (such as bruxism), and other clinical factors.
+                Based on the survival calculation, the probability of retaining this tooth over
+                the next 4 years is approximately <strong>{survival}%</strong>. This estimate
+                depends on the quality of the final restoration, the patient’s compliance with
+                oral hygiene measures, absence of parafunctional habits (such as bruxism), and
+                other clinical factors.
               </p>
             </div>
 
@@ -246,12 +264,12 @@ export default function PredictorResult() {
 
               <div className="text-center mb-10">
                 <p className="text-3xl font-bold">
-                  4-year survival estimate: 
+                  4-year survival estimate:
                   <span className="text-[#60a5fa] ml-3">{survival}%</span>
                 </p>
               </div>
 
-              {result.affectingFactors && result.affectingFactors.length > 0 && (
+              {result.affectingFactors?.length > 0 && (
                 <div className="mt-8 pt-8 border-t border-gray-700">
                   <p className="text-lg font-semibold text-gray-300 mb-4 text-center">
                     Factors Affecting Survivability:
@@ -268,11 +286,14 @@ export default function PredictorResult() {
               )}
             </div>
 
-            <div className={`text-center py-16 rounded-3xl text-5xl font-bold mb-12 border-4 transition-all
-              ${isRestorable 
-                ? 'border-[#10b981] bg-green-950/40 text-[#10b981]' 
-                : 'border-[#ef4444] bg-red-950/40 text-[#ef4444]'}`}>
-              {isRestorable ? '✅ Practical to Retain' : '⚠️ Impractical to Retain'}
+            <div
+              className={`text-center py-16 rounded-3xl text-5xl font-bold mb-12 border-4 transition-all ${
+                isRestorable
+                  ? "border-[#10b981] bg-green-950/40 text-[#10b981]"
+                  : "border-[#ef4444] bg-red-950/40 text-[#ef4444]"
+              }`}
+            >
+              {isRestorable ? "✅ Practical to Retain" : "⚠️ Impractical to Retain"}
             </div>
 
             {result.treatmentRec && (
@@ -284,11 +305,11 @@ export default function PredictorResult() {
 
             <div className="bg-[#0f172a] p-10 rounded-2xl border-l-8 border-[#0f6cbd] text-lg leading-relaxed mb-12">
               <strong className="text-[#94a3b8] block mb-4">Clinical Note:</strong>
-              <p dangerouslySetInnerHTML={{ __html: result.explanationNote || '' }} />
+              <p dangerouslySetInnerHTML={{ __html: result.explanationNote || "" }} />
             </div>
 
             {isRestorable && (
-              <button 
+              <button
                 onClick={goToRestorative}
                 className="w-full bg-[#10b981] hover:bg-[#0ea46c] text-[#0f172a] font-bold py-7 rounded-2xl text-2xl transition-all active:scale-[0.98]"
               >
@@ -297,7 +318,7 @@ export default function PredictorResult() {
             )}
 
             <p className="text-center mt-16 text-red-400 text-sm leading-relaxed">
-              ⚠️ This result is for clinical decision support only.<br/>
+              ⚠️ This result is for clinical decision support only.<br />
               Always apply your professional judgment.
             </p>
           </div>
@@ -308,10 +329,12 @@ export default function PredictorResult() {
           <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-6">
             <div className="bg-[#1e2937] rounded-3xl p-8 max-w-md w-full border border-gray-700">
               <h3 className="text-2xl font-bold mb-6 text-[#0f6cbd]">Save Case</h3>
-              
+
               <div className="space-y-5">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Case Name <span className="text-red-500">*</span></label>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Case Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={caseName}
@@ -322,7 +345,9 @@ export default function PredictorResult() {
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Phone Number <span className="text-red-500">*</span></label>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Phone Number <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="tel"
                     value={phoneNumber}
@@ -362,15 +387,27 @@ export default function PredictorResult() {
           </div>
         )}
 
-        {/* Bottom Navigation */}
+        {/* Footer */}
         <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
           <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
-            <Link href="/about" className="hover:text-white transition">About</Link>
-            <Link href="/references" className="hover:text-white transition">References</Link>
-            <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>
-            <Link href="/contact" className="hover:text-white transition">Contact Us</Link>
-            <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
-            <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+            <Link href="/about" className="hover:text-white transition">
+              About
+            </Link>
+            <Link href="/references" className="hover:text-white transition">
+              References
+            </Link>
+            <Link href="/how-to-use" className="hover:text-white transition">
+              How to Use
+            </Link>
+            <Link href="/contact" className="hover:text-white transition">
+              Contact Us
+            </Link>
+            <Link href="/privacy" className="hover:text-white transition">
+              Privacy Policy
+            </Link>
+            <Link href="/terms" className="hover:text-white transition">
+              Terms of Service
+            </Link>
           </div>
           <p className="mt-6 text-xs">© 2026 Endoprognosis • All Rights Reserved</p>
         </div>
