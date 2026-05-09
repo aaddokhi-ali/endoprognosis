@@ -55,7 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // Helper to clean Firebase error messages
   const getFriendlyErrorMessage = (err: any): string => {
     const code = err?.code || '';
     
@@ -66,7 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (code.includes('too-many-requests')) return "Too many failed attempts. Please try again later.";
     if (code.includes('network-request-failed')) return "Network error. Please check your internet connection.";
 
-    // Fallback
     return err?.message?.replace('Firebase: ', '') || "Something went wrong. Please try again.";
   };
 
@@ -81,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       await sendEmailVerification(userCredential.user, actionCodeSettings);
-      await signOut(auth); // Keep user logged out until verified
+      await signOut(auth);
     } catch (err: any) {
       const message = getFriendlyErrorMessage(err);
       setError(message);
@@ -89,15 +87,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // ==================== UPDATED LOGIN FUNCTION ====================
   const login = async (email: string, password: string) => {
     setError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const loggedInUser = userCredential.user;
 
-      // Force refresh to get the latest emailVerified status
+      // Strong refresh
       await loggedInUser.reload();
+      await loggedInUser.getIdToken(true);
 
       if (!loggedInUser.emailVerified) {
         await signOut(auth);
@@ -112,7 +110,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(message);
     }
   };
-  // ============================================================
 
   const logout = async () => {
     setError(null);
