@@ -129,19 +129,21 @@ export default function DentalTraumaCenter() {
             </div>
 
             {/* Gender */}
-            <div>
-              <label className="block text-sm mb-2 text-gray-300">Gender</label>
-              <select 
-                name="gender"
-                value={patientInfo.gender}
-                onChange={handlePatientChange}
-                className="w-full bg-white/10 border border-white/30 focus:border-blue-500 rounded-2xl px-5 py-4 text-white focus:outline-none transition-colors"
-              >
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </div>
+<div>
+  <label className="block text-sm mb-2 text-gray-300">Gender</label>
+  <select 
+    name="gender"
+    value={patientInfo.gender}
+    onChange={handlePatientChange}
+    className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 
+               text-white focus:outline-none focus:border-[#10b981] 
+               appearance-none transition-colors"
+  >
+    <option value="" className="bg-[#0a1428] text-white py-3">Select Gender</option>
+    <option value="Male" className="bg-[#0a1428] text-white py-3">Male</option>
+    <option value="Female" className="bg-[#0a1428] text-white py-3">Female</option>
+  </select>
+</div>
 
             {/* Tooth (Full FDI) */}
             <div>

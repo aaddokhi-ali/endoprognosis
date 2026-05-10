@@ -3,6 +3,7 @@
 import Navigation from "../components/navigation";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";   // ← Added for the bottom navigation links
 
 export default function GuestPage() {
   const router = useRouter();
@@ -115,6 +116,28 @@ export default function GuestPage() {
               Create Free Account → Full Access
             </button>
           </div>
+        </div>
+
+        {/* Bottom Navigation + Footer - Added exactly as requested */}
+        <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
+          <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
+            <Link href="/about" className="hover:text-white transition">About</Link>
+            <Link href="/references" className="hover:text-white transition">References</Link>
+            <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>
+            <Link href="/contact" className="hover:text-white transition">Contact Us</Link>
+            <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
+            <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+          </div>
+
+          {/* Support Email */}
+          <div className="mt-6 text-xs">
+            Need help? Contact us at{" "}
+            <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
+              support@endoprognosis.org
+            </a>
+          </div>
+          
+          <p className="mt-6 text-xs">© 2026 Endoprognosis • All Rights Reserved</p>
         </div>
       </div>
     </>

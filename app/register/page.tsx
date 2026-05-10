@@ -210,20 +210,30 @@ export default function RegisterPage() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-2">Profession</label>
-                    <select
-                      name="profession"
-                      value={formData.profession}
-                      onChange={handleChange}
-                      className="w-full bg-white/10 border border-white/30 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-[#10b981]"
-                    >
-                      <option value="dental_student">Dental Student</option>
-                      <option value="dentist">General Dentist</option>
-                      <option value="endodontist">Endodontist</option>
-                      <option value="others">Others</option>
-                    </select>
-                  </div>
+         <div>
+  <label className="block text-sm text-gray-300 mb-2">Profession</label>
+  <select
+    name="profession"
+    value={formData.profession}
+    onChange={handleChange}
+    className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-6 py-4 text-white 
+               focus:outline-none focus:border-[#10b981] 
+               appearance-none"
+  >
+    <option value="dental_student" className="bg-[#0a1428] text-white py-3">
+      Dental Student
+    </option>
+    <option value="dentist" className="bg-[#0a1428] text-white py-3">
+      General Dentist
+    </option>
+    <option value="endodontist" className="bg-[#0a1428] text-white py-3">
+      Endodontist
+    </option>
+    <option value="others" className="bg-[#0a1428] text-white py-3">
+      Others
+    </option>
+  </select>
+</div>
 
                   <div>
                     <label className="block text-sm text-gray-300 mb-2">Password</label>

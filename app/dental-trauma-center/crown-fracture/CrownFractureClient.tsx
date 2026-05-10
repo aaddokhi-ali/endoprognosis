@@ -170,8 +170,73 @@ export default function CrownFractureClient() {
     setIsGenerating(false);
   };
 
-  const exportPDF = () => alert("✅ Personalized Professional PDF Generated!");
-  const shareEmail = () => alert("📧 Report ready to share via email");
+  const exportPDF = async () => {
+    if (!result) {
+      alert("Please generate the protocol first!");
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      let cleanHTML = result
+        .replace(/text-blue-300/g, 'color: #93c5fd')
+        .replace(/text-blue-400/g, 'color: #60a5fa')
+        .replace(/text-emerald-400/g, 'color: #34d399')
+        .replace(/bg-white\/5/g, 'background-color: #1a2338')
+        .replace(/border-white\/10/g, 'border-color: #334155')
+        .replace(/text-gray-400/g, 'color: #9ca3af')
+        .replace(/text-gray-300/g, 'color: #d1d5db')
+        .replace(/text-gray-200/g, 'color: #e5e7eb');
+
+      const element = document.createElement("div");
+      element.innerHTML = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; 
+                    color: white; 
+                    background: #0a1428; 
+                    padding: 40px 30px; 
+                    line-height: 1.6;">
+          ${cleanHTML}
+        </div>
+      `;
+
+      document.body.appendChild(element);
+
+      const opt = {
+        margin: [15, 20, 15, 20] as [number, number, number, number],
+        filename: `Crown_Fracture_Protocol_${(patientInfo.patientName || "Patient").replace(/\s+/g, "_")}_Tooth${patientInfo.tooth || "XX"}.pdf`,
+        image: { 
+          type: "jpeg" as const, 
+          quality: 0.98 
+        },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#0a1428",
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: "mm", 
+          format: "a4", 
+          orientation: "portrait" as const
+        }
+      };
+
+      await html2pdf().from(element).set(opt).save();
+
+      document.body.removeChild(element);
+      alert("✅ PDF successfully downloaded!");
+
+    } catch (error) {
+      console.error("PDF Error:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleSaveCase = () => {
     saveCase("Crown Fracture", { 
@@ -288,10 +353,11 @@ export default function CrownFractureClient() {
                         id="fractureType" 
                         value={formData.fractureType} 
                         onChange={handleChange}
-                        className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white"
+                        className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                   focus:outline-none focus:border-[#10b981] appearance-none"
                       >
-                        <option value="uncomplicated">Uncomplicated (No Pulp Exposure)</option>
-                        <option value="complicated">Complicated (Pulp Exposure)</option>
+                        <option value="uncomplicated" className="bg-[#0a1428] text-white py-3">Uncomplicated (No Pulp Exposure)</option>
+                        <option value="complicated" className="bg-[#0a1428] text-white py-3">Complicated (Pulp Exposure)</option>
                       </select>
                     </div>
                     <div>
@@ -300,10 +366,11 @@ export default function CrownFractureClient() {
                         id="apex" 
                         value={formData.apex} 
                         onChange={handleChange}
-                        className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white"
+                        className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                   focus:outline-none focus:border-[#10b981] appearance-none"
                       >
-                        <option value="open">Open Apex (Immature)</option>
-                        <option value="closed">Closed Apex (Mature)</option>
+                        <option value="open" className="bg-[#0a1428] text-white py-3">Open Apex (Immature)</option>
+                        <option value="closed" className="bg-[#0a1428] text-white py-3">Closed Apex (Mature)</option>
                       </select>
                     </div>
                     <div>
@@ -312,11 +379,12 @@ export default function CrownFractureClient() {
                         id="timeSince" 
                         value={formData.timeSince} 
                         onChange={handleChange}
-                        className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white"
+                        className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                   focus:outline-none focus:border-[#10b981] appearance-none"
                       >
-                        <option value="immediate">Immediate (&lt; 2 hours)</option>
-                        <option value="short">Short Delay (2–24 hours)</option>
-                        <option value="delayed">Delayed (&gt; 24 hours)</option>
+                        <option value="immediate" className="bg-[#0a1428] text-white py-3">Immediate (&lt; 2 hours)</option>
+                        <option value="short" className="bg-[#0a1428] text-white py-3">Short Delay (2–24 hours)</option>
+                        <option value="delayed" className="bg-[#0a1428] text-white py-3">Delayed (&gt; 24 hours)</option>
                       </select>
                     </div>
                     <div className="flex items-center gap-3">
@@ -368,21 +436,20 @@ export default function CrownFractureClient() {
               <div className="mt-12 flex gap-6">
                 <button 
                   onClick={exportPDF} 
-                  className="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3"
+                  disabled={isGenerating || !result}
+                  className="flex-1 bg-indigo-700 hover:bg-indigo-800 disabled:bg-gray-600 disabled:cursor-not-allowed 
+                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
                 >
-                  Export as PDF
+                  {isGenerating ? "GENERATING PDF..." : "Export as PDF"}
                 </button>
+
                 <button 
                   onClick={handleSaveCase} 
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3"
+                  disabled={!result}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed 
+                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
                 >
                   Save Case
-                </button>
-                <button 
-                  onClick={shareEmail} 
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3"
-                >
-                  Share via Email
                 </button>
               </div>
             </div>

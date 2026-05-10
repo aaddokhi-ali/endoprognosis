@@ -84,6 +84,38 @@ export default function AvulsionClient() {
       "Monitor for signs of revascularization (continued root development, positive sensibility). Initiate regenerative endodontic procedure or apexification if pulp necrosis develops." :
       "Start root canal treatment 7–10 days after replantation. Use calcium hydroxide as an intra-canal dressing for 2–4 weeks before final obturation.";
 
+    // === Dynamic Follow-up Dates ===
+    const injuryDate = new Date(formData.injuryDate);
+    
+    const addDays = (date: Date, days: number) => {
+      const result = new Date(date);
+      result.setDate(result.getDate() + days);
+      return result.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    };
+
+    const addMonths = (date: Date, months: number) => {
+      const result = new Date(date);
+      result.setMonth(result.getMonth() + months);
+      return result.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    };
+
+    const followUps = [
+      { label: "2 weeks", date: addDays(injuryDate, 14) },
+      { label: "4 weeks", date: addDays(injuryDate, 28) },
+      { label: "6–8 weeks", date: addDays(injuryDate, 49) },
+      { label: "3 months", date: addMonths(injuryDate, 3) },
+      { label: "6 months", date: addMonths(injuryDate, 6) },
+      { label: "1 year", date: addMonths(injuryDate, 12) },
+    ];
+
     const html = `
       <div class="space-y-10">
         <div>
@@ -135,33 +167,27 @@ export default function AvulsionClient() {
         <div class="detail-box bg-white/5 border border-white/10 rounded-3xl p-8">
           <h3 class="font-bold text-2xl mb-6 text-rose-400">Follow-up Schedule with Specific Actions</h3>
           <div class="space-y-6">
-            <div class="flex justify-between items-start border-b border-white/10 pb-4">
-              <div class="font-semibold text-white">2 weeks</div>
-              <div class="text-right text-gray-300">Splint removal (unless alveolar fracture), clinical examination (mobility, percussion, sensibility), radiographic control. Assess for early signs of infection.</div>
-            </div>
-            <div class="flex justify-between items-start border-b border-white/10 pb-4">
-              <div class="font-semibold text-white">4 weeks</div>
-              <div class="text-right text-gray-300">Clinical examination (pulp sensibility, percussion, mobility) + radiographic assessment for resorption or periapical changes.</div>
-            </div>
-            <div class="flex justify-between items-start border-b border-white/10 pb-4">
-              <div class="font-semibold text-white">6–8 weeks</div>
-              <div class="text-right text-gray-300">Clinical & radiographic control. Evaluate pulp status and early root resorption.</div>
-            </div>
-            <div class="flex justify-between items-start border-b border-white/10 pb-4">
-              <div class="font-semibold text-white">3 months</div>
-              <div class="text-right text-gray-300">Clinical sensibility testing + radiographs. Check for pulp canal obliteration or inflammatory resorption.</div>
-            </div>
-            <div class="flex justify-between items-start border-b border-white/10 pb-4">
-              <div class="font-semibold text-white">6 months</div>
-              <div class="text-right text-gray-300">Full clinical and radiographic evaluation. Monitor for replacement resorption (ankylosis) and pulp necrosis.</div>
-            </div>
-            <div class="flex justify-between items-start border-b border-white/10 pb-4">
-              <div class="font-semibold text-white">1 year</div>
-              <div class="text-right text-gray-300">Clinical & radiographic review. Assess long-term healing and tooth survival.</div>
-            </div>
+            ${followUps.map(fu => `
+              <div class="flex justify-between items-start border-b border-white/10 pb-4">
+                <div class="font-semibold text-white">${fu.label}</div>
+                <div class="text-right text-gray-300">
+                  ${fu.date}<br>
+                  ${fu.label === "2 weeks" ? "Splint removal (unless alveolar fracture), clinical examination (mobility, percussion, sensibility), radiographic control. Assess for early signs of infection." : 
+                    fu.label === "4 weeks" ? "Clinical examination (pulp sensibility, percussion, mobility) + radiographic assessment for resorption or periapical changes." :
+                    fu.label === "6–8 weeks" ? "Clinical & radiographic control. Evaluate pulp status and early root resorption." :
+                    fu.label === "3 months" ? "Clinical sensibility testing + radiographs. Check for pulp canal obliteration or inflammatory resorption." :
+                    fu.label === "6 months" ? "Full clinical and radiographic evaluation. Monitor for replacement resorption (ankylosis) and pulp necrosis." :
+                    "Clinical & radiographic review. Assess long-term healing and tooth survival."}
+                </div>
+              </div>
+            `).join('')}
+
             <div class="flex justify-between items-start">
               <div class="font-semibold text-white">Yearly up to 5 years</div>
-              <div class="text-right text-gray-300">Monitor for late complications: inflammatory resorption, replacement resorption (ankylosis), infraposition in growing patients, and pulp status.</div>
+              <div class="text-right text-gray-300">
+                ${addMonths(injuryDate, 24)} – ${addMonths(injuryDate, 60)}<br>
+                Monitor for late complications: inflammatory resorption, replacement resorption (ankylosis), infraposition in growing patients, and pulp status.
+              </div>
             </div>
           </div>
         </div>
@@ -172,8 +198,73 @@ export default function AvulsionClient() {
     setIsGenerating(false);
   };
 
-  const exportPDF = () => alert("✅ Personalized Professional PDF Generated!");
-  const shareEmail = () => alert("📧 Report ready to share via email");
+  const exportPDF = async () => {
+    if (!result) {
+      alert("Please generate the protocol first!");
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      let cleanHTML = result
+        .replace(/text-rose-300/g, 'color: #fda4af')
+        .replace(/text-rose-400/g, 'color: #fb7185')
+        .replace(/text-emerald-400/g, 'color: #34d399')
+        .replace(/bg-white\/5/g, 'background-color: #1a2338')
+        .replace(/border-white\/10/g, 'border-color: #334155')
+        .replace(/text-gray-400/g, 'color: #9ca3af')
+        .replace(/text-gray-300/g, 'color: #d1d5db')
+        .replace(/text-gray-200/g, 'color: #e5e7eb');
+
+      const element = document.createElement("div");
+      element.innerHTML = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; 
+                    color: white; 
+                    background: #0a1428; 
+                    padding: 40px 30px; 
+                    line-height: 1.6;">
+          ${cleanHTML}
+        </div>
+      `;
+
+      document.body.appendChild(element);
+
+      const opt = {
+        margin: [15, 20, 15, 20] as [number, number, number, number],
+        filename: `Avulsion_Protocol_${(patientInfo.patientName || "Patient").replace(/\s+/g, "_")}_Tooth${patientInfo.tooth || "XX"}.pdf`,
+        image: { 
+          type: "jpeg" as const, 
+          quality: 0.98 
+        },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#0a1428",
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: "mm", 
+          format: "a4", 
+          orientation: "portrait" as const
+        }
+      };
+
+      await html2pdf().from(element).set(opt).save();
+
+      document.body.removeChild(element);
+      alert("✅ PDF successfully downloaded!");
+
+    } catch (error) {
+      console.error("PDF Error:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleSaveCase = () => {
     saveCase("Avulsion", { 
@@ -310,14 +401,15 @@ export default function AvulsionClient() {
                         id="storageMedia" 
                         value={formData.storageMedia} 
                         onChange={handleChange} 
-                        className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white"
+                        className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                   focus:outline-none focus:border-[#10b981] appearance-none"
                       >
-                        <option value="hanks">Hank’s Balanced Salt Solution (Best)</option>
-                        <option value="milk">Cold Milk (Excellent)</option>
-                        <option value="saliva">Saliva (Acceptable)</option>
-                        <option value="saline">Saline</option>
-                        <option value="water">Water (Poor)</option>
-                        <option value="dry">Dry Storage (Worst)</option>
+                        <option value="hanks" className="bg-[#0a1428] text-white py-3">Hank’s Balanced Salt Solution (Best)</option>
+                        <option value="milk" className="bg-[#0a1428] text-white py-3">Cold Milk (Excellent)</option>
+                        <option value="saliva" className="bg-[#0a1428] text-white py-3">Saliva (Acceptable)</option>
+                        <option value="saline" className="bg-[#0a1428] text-white py-3">Saline</option>
+                        <option value="water" className="bg-[#0a1428] text-white py-3">Water (Poor)</option>
+                        <option value="dry" className="bg-[#0a1428] text-white py-3">Dry Storage (Worst)</option>
                       </select>
                     </div>
 
@@ -327,10 +419,11 @@ export default function AvulsionClient() {
                         id="apex" 
                         value={formData.apex} 
                         onChange={handleChange} 
-                        className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white"
+                        className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                   focus:outline-none focus:border-[#10b981] appearance-none"
                       >
-                        <option value="open">Open Apex (Immature)</option>
-                        <option value="closed">Closed Apex (Mature)</option>
+                        <option value="open" className="bg-[#0a1428] text-white py-3">Open Apex (Immature)</option>
+                        <option value="closed" className="bg-[#0a1428] text-white py-3">Closed Apex (Mature)</option>
                       </select>
                     </div>
 
@@ -373,21 +466,20 @@ export default function AvulsionClient() {
               <div className="mt-12 flex gap-6">
                 <button 
                   onClick={exportPDF} 
-                  className="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3"
+                  disabled={isGenerating || !result}
+                  className="flex-1 bg-indigo-700 hover:bg-indigo-800 disabled:bg-gray-600 disabled:cursor-not-allowed 
+                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
                 >
-                  Export as PDF
+                  {isGenerating ? "GENERATING PDF..." : "Export as PDF"}
                 </button>
+
                 <button 
                   onClick={handleSaveCase} 
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3"
+                  disabled={!result}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed 
+                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
                 >
                   Save Case
-                </button>
-                <button 
-                  onClick={shareEmail} 
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3"
-                >
-                  Share via Email
                 </button>
               </div>
             </div>

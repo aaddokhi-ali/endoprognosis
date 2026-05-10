@@ -147,8 +147,73 @@ export default function AdvancedFractures() {
     setIsGenerating(false);
   };
 
-  const exportPDF = () => alert("✅ Personalized Professional PDF Generated!");
-  const shareEmail = () => alert("📧 Report ready to share via email");
+  const exportPDF = async () => {
+    if (!result) {
+      alert("Please generate the protocol first!");
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      let cleanHTML = result
+        .replace(/text-amber-300/g, 'color: #fcd34d')
+        .replace(/text-amber-400/g, 'color: #fbbf24')
+        .replace(/text-emerald-400/g, 'color: #34d399')
+        .replace(/bg-white\/5/g, 'background-color: #1a2338')
+        .replace(/border-white\/10/g, 'border-color: #334155')
+        .replace(/text-gray-400/g, 'color: #9ca3af')
+        .replace(/text-gray-300/g, 'color: #d1d5db')
+        .replace(/text-gray-200/g, 'color: #e5e7eb');
+
+      const element = document.createElement("div");
+      element.innerHTML = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; 
+                    color: white; 
+                    background: #0a1428; 
+                    padding: 40px 30px; 
+                    line-height: 1.6;">
+          ${cleanHTML}
+        </div>
+      `;
+
+      document.body.appendChild(element);
+
+      const opt = {
+        margin: [15, 20, 15, 20] as [number, number, number, number],
+        filename: `Advanced_Fracture_Protocol_${(patientInfo.patientName || "Patient").replace(/\s+/g, "_")}_Tooth${patientInfo.tooth || "XX"}.pdf`,
+        image: { 
+          type: "jpeg" as const, 
+          quality: 0.98 
+        },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#0a1428",
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: "mm", 
+          format: "a4", 
+          orientation: "portrait" as const
+        }
+      };
+
+      await html2pdf().from(element).set(opt).save();
+
+      document.body.removeChild(element);
+      alert("✅ PDF successfully downloaded!");
+
+    } catch (error) {
+      console.error("PDF Error:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleSaveCase = () => {
     saveCase("Advanced Fractures", { 
@@ -244,10 +309,11 @@ export default function AdvancedFractures() {
                     <div>
                       <label className="block text-sm mb-2 text-gray-400">Fracture Type</label>
                       <select id="fractureType" value={formData.fractureType} onChange={handleChange}
-                        className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white">
-                        <option value="crownroot">Crown-Root Fracture</option>
-                        <option value="root">Root Fracture</option>
-                        <option value="alveolar">Alveolar Process Fracture</option>
+                        className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                   focus:outline-none focus:border-[#10b981] appearance-none">
+                        <option value="crownroot" className="bg-[#0a1428] text-white py-3">Crown-Root Fracture</option>
+                        <option value="root" className="bg-[#0a1428] text-white py-3">Root Fracture</option>
+                        <option value="alveolar" className="bg-[#0a1428] text-white py-3">Alveolar Process Fracture</option>
                       </select>
                     </div>
 
@@ -255,10 +321,11 @@ export default function AdvancedFractures() {
                       <div>
                         <label className="block text-sm mb-2 text-gray-400">Root Fracture Location</label>
                         <select id="rootLocation" value={formData.rootLocation} onChange={handleChange}
-                          className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white">
-                          <option value="apical">Apical Third</option>
-                          <option value="middle">Middle Third</option>
-                          <option value="cervical">Cervical Third</option>
+                          className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                     focus:outline-none focus:border-[#10b981] appearance-none">
+                          <option value="apical" className="bg-[#0a1428] text-white py-3">Apical Third</option>
+                          <option value="middle" className="bg-[#0a1428] text-white py-3">Middle Third</option>
+                          <option value="cervical" className="bg-[#0a1428] text-white py-3">Cervical Third</option>
                         </select>
                       </div>
                     )}
@@ -267,9 +334,10 @@ export default function AdvancedFractures() {
                       <div>
                         <label className="block text-sm mb-2 text-gray-400">Number of Teeth Involved</label>
                         <select id="teethInvolved" value={formData.teethInvolved} onChange={handleChange}
-                          className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white">
-                          <option value="single">Single Tooth</option>
-                          <option value="multiple">Multiple Teeth (Segment)</option>
+                          className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 text-white 
+                                     focus:outline-none focus:border-[#10b981] appearance-none">
+                          <option value="single" className="bg-[#0a1428] text-white py-3">Single Tooth</option>
+                          <option value="multiple" className="bg-[#0a1428] text-white py-3">Multiple Teeth (Segment)</option>
                         </select>
                       </div>
                     )}
@@ -311,14 +379,21 @@ export default function AdvancedFractures() {
 
               {/* Bottom Actions */}
               <div className="mt-12 flex gap-6">
-                <button onClick={exportPDF} className="flex-1 bg-indigo-700 hover:bg-indigo-800 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3">
-                  Export as PDF
+                <button 
+                  onClick={exportPDF} 
+                  disabled={isGenerating || !result}
+                  className="flex-1 bg-indigo-700 hover:bg-indigo-800 disabled:bg-gray-600 disabled:cursor-not-allowed 
+                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
+                >
+                  {isGenerating ? "GENERATING PDF..." : "Export as PDF"}
                 </button>
-                <button onClick={handleSaveCase} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3">
+                <button 
+                  onClick={handleSaveCase} 
+                  disabled={!result}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed 
+                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
+                >
                   Save Case
-                </button>
-                <button onClick={shareEmail} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3">
-                  Share via Email
                 </button>
               </div>
             </div>
