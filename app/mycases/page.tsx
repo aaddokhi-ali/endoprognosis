@@ -12,7 +12,8 @@ import {
   getDocs, 
   doc, 
   updateDoc,
-  deleteDoc 
+  deleteDoc,
+  onSnapshot 
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import Navigation from "../components/navigation";
@@ -66,6 +67,7 @@ export default function MyCases() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<SavedCase>>({});
   const [activeTab, setActiveTab] = useState<"All" | "Crack Cases" | "No Treatment" | "In-Progress" | "Done" | "Postpone">("All");
+  const [deletingId, setDeletingId] = useState<string | null>(null);   // <-- Added for delete loading state
 
   const { user } = useAuth();
 
@@ -74,6 +76,7 @@ export default function MyCases() {
   const perioOptions = ["None", "Localized", "Generalized"];
   const genderOptions = ["Male", "Female"];
 
+  // Realtime listener (replaces previous one-time fetch)
   useEffect(() => {
     if (!user) {
       setError("Please log in to view your cases.");
@@ -81,18 +84,17 @@ export default function MyCases() {
       return;
     }
 
-    const fetchCases = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    setLoading(true);
+    setError(null);
 
-        const q = query(
-          collection(db, "cases"),
-          where("userId", "==", user.uid),
-          orderBy("createdAt", "desc")
-        );
+    const q = query(
+      collection(db, "cases"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
 
-        const querySnapshot = await getDocs(q);
+    const unsubscribe = onSnapshot(q, 
+      (querySnapshot) => {
         const casesList: SavedCase[] = [];
 
         querySnapshot.forEach((doc) => {
@@ -108,15 +110,16 @@ export default function MyCases() {
         });
 
         setCases(casesList);
-      } catch (err: any) {
+        setLoading(false);
+      },
+      (err: any) => {
         console.error("Error fetching cases:", err);
         setError("Failed to load your cases. Please try again.");
-      } finally {
         setLoading(false);
       }
-    };
+    );
 
-    fetchCases();
+    return () => unsubscribe();
   }, [user]);
 
   const filteredCases = useMemo(() => {
@@ -302,13 +305,17 @@ export default function MyCases() {
       return;
     }
 
+    setDeletingId(caseId);
+
     try {
       await deleteDoc(doc(db, "cases", caseId));
-      setCases(prev => prev.filter(c => c.id !== caseId));
+      // No need to manually filter - realtime listener will update automatically
       alert("Case deleted successfully.");
     } catch (err: any) {
       console.error("Delete failed:", err);
       alert("Failed to delete case. Please try again.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -630,9 +637,10 @@ export default function MyCases() {
                           </button>
                           <button 
                             onClick={() => deleteCase(c.id)} 
-                            className="px-8 py-4 bg-red-600 hover:bg-red-700 rounded-2xl font-semibold text-white"
+                            disabled={deletingId === c.id}
+                            className="px-8 py-4 bg-red-600 hover:bg-red-700 rounded-2xl font-semibold text-white disabled:opacity-50"
                           >
-                            Delete
+                            {deletingId === c.id ? "Deleting..." : "Delete"}
                           </button>
                         </>
                       ) : (
@@ -810,7 +818,13 @@ export default function MyCases() {
                         <>
                           <button onClick={() => saveEdit(c.id)} className="flex-1 bg-[#10b981] hover:bg-[#0ea46c] py-3 rounded-2xl font-semibold">Save Changes</button>
                           <button onClick={() => { setEditingId(null); setEditForm({}); }} className="flex-1 bg-gray-700 hover:bg-gray-600 py-3 rounded-2xl font-semibold">Cancel</button>
-                          <button onClick={() => deleteCase(c.id)} className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-2xl font-semibold text-white">Delete Case</button>
+                          <button 
+                            onClick={() => deleteCase(c.id)} 
+                            disabled={deletingId === c.id}
+                            className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-2xl font-semibold text-white disabled:opacity-50"
+                          >
+                            {deletingId === c.id ? "Deleting..." : "Delete Case"}
+                          </button>
                         </>
                       ) : (
                         <button onClick={() => startEditing(c)} className="flex-1 bg-[#0f6cbd] hover:bg-[#0a5a9c] py-3 rounded-2xl font-semibold">Edit Case</button>
