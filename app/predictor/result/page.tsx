@@ -19,8 +19,21 @@ export default function PredictorResult() {
   const [saving, setSaving] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  // ==================== DEBUG: CURRENT USER FOR FIRESTORE ====================
+  useEffect(() => {
+    console.log("🔍 [PredictorResult] Current user for Firestore:", {
+      uid: user?.uid,
+      email: user?.email,
+      emailVerified: user?.emailVerified,
+      isAnonymous: user?.isAnonymous,
+      authLoading: authLoading,
+      hasUser: !!user,
+    });
+  }, [user, authLoading]);
+  // =========================================================================
 
   // Load result from localStorage
   useEffect(() => {
@@ -88,6 +101,11 @@ export default function PredictorResult() {
 
   // Enhanced Save Function with Option B - More specific duplicate check
   const handleSaveCase = async () => {
+    if (authLoading) {
+      alert("Authentication is still loading. Please wait a moment.");
+      return;
+    }
+
     if (!user?.uid) {
       alert("Please log in to save cases.");
       return;
@@ -169,6 +187,8 @@ export default function PredictorResult() {
         savedAt: new Date().toISOString(),
       };
 
+      console.log("📤 Sending to Firestore with userId:", caseData.userId);
+
       const docRef = await addDoc(collection(db, "cases"), caseData);
       
       console.log("✅ Case saved with ID:", docRef.id);
@@ -184,9 +204,12 @@ export default function PredictorResult() {
 
     } catch (error: any) {
       console.error("❌ Save Error:", error.code, error.message);
+      console.error("Full error object:", error);
 
       if (error.code === "permission-denied") {
-        alert("Permission denied. Check Firestore rules.");
+        alert("Permission denied. Check Firestore rules and console logs.");
+      } else if (error.code === "unauthenticated") {
+        alert("You are not authenticated. Please log out and log in again.");
       } else {
         alert("Failed to save case. Please try again.");
       }

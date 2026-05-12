@@ -69,7 +69,20 @@ export default function MyCases() {
   const [activeTab, setActiveTab] = useState<"All" | "Crack Cases" | "No Treatment" | "In-Progress" | "Done" | "Postpone">("All");
   const [deletingId, setDeletingId] = useState<string | null>(null);   // <-- Added for delete loading state
 
-  const { user } = useAuth();
+ const { user, loading: authLoading } = useAuth();
+
+// ==================== DEBUG: CURRENT USER FOR FIRESTORE ====================
+useEffect(() => {
+  console.log("🔍 [MyCases] Current user for Firestore:", {
+    uid: user?.uid,
+    email: user?.email,
+    emailVerified: user?.emailVerified,
+    isAnonymous: user?.isAnonymous,
+    authLoading: authLoading,
+    hasUser: !!user,
+  });
+}, [user, authLoading]);
+// =========================================================================
 
   const ageGroups = ["<20", "20-30", "31-40", "41-50", "51-60", "61-70", ">70"];
   const asaOptions = ["I", "II", "III", "IV"];
@@ -260,89 +273,99 @@ export default function MyCases() {
   };
 
   const saveEdit = async (caseId: string) => {
-    if (!user) {
-      alert("You must be logged in to edit cases.");
-      return;
+  if (authLoading) {
+    alert("Authentication is still loading. Please wait.");
+    return;
+  }
+
+  if (!user?.uid) {
+    alert("You must be logged in to edit cases.");
+    return;
+  }
+
+  try {
+    console.log("📤 Updating case:", caseId, "with user:", user.uid);
+
+    const caseRef = doc(db, "cases", caseId);
+    
+    const updateData = {
+      caseName: editForm.caseName || "",
+      phoneNumber: editForm.phoneNumber || "",
+      treatmentStatus: editForm.treatmentStatus || "No Treatment",
+      followUpDate: editForm.followUpDate || null,
+      furtherNote: editForm.furtherNote || "",
+      gender: editForm.gender || "",
+      ageGroup: editForm.ageGroup || "",
+      asa: editForm.asa || "",
+      periodontalStatus: editForm.periodontalStatus || "",
+      updatedAt: new Date().toISOString(),   // better than new Date() for Firestore
+    };
+
+    await updateDoc(caseRef, updateData);
+
+    // Optimistic update
+    setCases(prev => prev.map(c => 
+      c.id === caseId ? { ...c, ...updateData } : c
+    ));
+
+    setEditingId(null);
+    setEditForm({});
+    alert("✅ Case updated successfully!");
+    
+    console.log("✅ Case updated successfully");
+  } catch (err: any) {
+    console.error("❌ Update failed:", {
+      code: err.code,
+      message: err.message,
+      fullError: err
+    });
+
+    if (err.code === "permission-denied") {
+      alert("Permission denied.\n\nPlease check Firestore rules and console logs.");
+    } else if (err.code === "unauthenticated") {
+      alert("Your session expired. Please log out and log in again.");
+    } else {
+      alert("Failed to update case. Please check console for details.");
     }
-
-    try {
-      const caseRef = doc(db, "cases", caseId);
-      
-      const updateData = {
-        caseName: editForm.caseName || "",
-        phoneNumber: editForm.phoneNumber || "",
-        treatmentStatus: editForm.treatmentStatus || "No Treatment",
-        followUpDate: editForm.followUpDate || null,
-        furtherNote: editForm.furtherNote || "",
-        gender: editForm.gender || "",
-        ageGroup: editForm.ageGroup || "",
-        asa: editForm.asa || "",
-        periodontalStatus: editForm.periodontalStatus || "",
-        updatedAt: new Date(),
-      };
-
-      await updateDoc(caseRef, updateData);
-
-      setCases(prev => prev.map(c => 
-        c.id === caseId ? { ...c, ...updateData } : c
-      ));
-
-      setEditingId(null);
-      setEditForm({});
-      alert("✅ Case updated successfully!");
-    } catch (err: any) {
-      console.error("Update failed:", err);
-      if (err.code === "permission-denied") {
-        alert("Permission denied. Please log in again.");
-      } else {
-        alert("Failed to update case. Please check console.");
-      }
-    }
-  };
+  }
+};
 
   const deleteCase = async (caseId: string) => {
-    if (!confirm("Are you sure you want to permanently delete this case?")) {
-      return;
-    }
+  if (!confirm("Are you sure you want to permanently delete this case?")) {
+    return;
+  }
 
-    setDeletingId(caseId);
+  if (authLoading || !user?.uid) {
+    alert("Authentication issue. Please refresh and try again.");
+    return;
+  }
 
-    try {
-      await deleteDoc(doc(db, "cases", caseId));
-      // No need to manually filter - realtime listener will update automatically
-      alert("Case deleted successfully.");
-    } catch (err: any) {
-      console.error("Delete failed:", err);
+  setDeletingId(caseId);
+  console.log("🗑️ Attempting to delete case:", caseId);
+
+  try {
+    await deleteDoc(doc(db, "cases", caseId));
+    console.log("✅ Case deleted successfully");
+    alert("Case deleted successfully.");
+  } catch (err: any) {
+    console.error("❌ Delete failed:", {
+      code: err.code,
+      message: err.message,
+      fullError: err
+    });
+
+    if (err.code === "permission-denied") {
+      alert("Permission denied.\n\nCheck Firestore rules and console logs.");
+    } else if (err.code === "unauthenticated") {
+      alert("Your session expired. Please log out and log in again.");
+    } else {
       alert("Failed to delete case. Please try again.");
-    } finally {
-      setDeletingId(null);
     }
-  };
+  } finally {
+    setDeletingId(null);
+  }
+};
 
-  const shareViaWhatsApp = (c: SavedCase) => {
-    let text = `Endoprognosis Case:\nPatient: ${c.caseName}\nPhone: ${c.phoneNumber}\nTooth: #${c.toothNumber}`;
-
-    if (c.type === "crack-classifier") {
-      text += `\nClassification: ${c.classification || "—"}\nIowa Stage: ${c.iowaStage || "—"}`;
-    } else {
-      text += `\nDiagnosis: ${c.pulpalDiagnosis} with ${c.periapicalDiagnosis}\nSurvival: ${c.survivalEstimate}%`;
-    }
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-  };
-
-  const shareViaEmail = (c: SavedCase) => {
-    const subject = `Endoprognosis Case - ${c.caseName}`;
-    let body = `Patient: ${c.caseName}\nPhone: ${c.phoneNumber}\nTooth: #${c.toothNumber}\n`;
-
-    if (c.type === "crack-classifier") {
-      body += `Classification: ${c.classification || "—"}\nIowa Stage: ${c.iowaStage || "—"}\n`;
-    } else {
-      body += `Diagnosis: ${c.pulpalDiagnosis} with ${c.periapicalDiagnosis}\nSurvival Estimate: ${c.survivalEstimate}%\n`;
-    }
-
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
 
   if (!user) {
     return (

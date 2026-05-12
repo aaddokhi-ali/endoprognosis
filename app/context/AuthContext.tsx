@@ -13,6 +13,7 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
+  onAuthStateChanged,
   onIdTokenChanged,
   setPersistence,
   browserLocalPersistence,
@@ -47,30 +48,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPersistence(auth, browserLocalPersistence).catch(console.error);
   }, []);
 
-  // Listen to auth state changes with stronger refresh
- useEffect(() => {
-  const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
-    if (currentUser) {
-      try {
-        await currentUser.reload();
-        await currentUser.getIdToken(); // normal, non‑forced refresh
-        setUser(currentUser);
-      } catch (err: any) {
-        console.error("Token refresh error:", err);
-        if (err.code === "auth/quota-exceeded") {
-          // fallback: use cached token for now
+  // Main auth listener - Combined for maximum reliability in Next.js / Netlify
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      console.log("onAuthStateChanged triggered:", currentUser?.uid || "null");
+      setUser(currentUser);
+      if (!currentUser) setLoading(false);
+    });
+
+    const unsubscribeToken = onIdTokenChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        try {
+          await currentUser.reload();
+          await currentUser.getIdToken(false); // false = don't force refresh every time
           setUser(currentUser);
+        } catch (err: any) {
+          console.error("Token refresh error:", err);
+          setUser(currentUser); // fallback to current user
         }
+      } else {
+        setUser(null);
       }
-    } else {
-      setUser(null);
-    }
-    setLoading(false);
-  });
+      setLoading(false);
+    });
 
-  return () => unsubscribe();
-}, []);
-
+    return () => {
+      unsubscribeAuth();
+      unsubscribeToken();
+    };
+  }, []);
 
   const getFriendlyErrorMessage = (err: any): string => {
     const code = err?.code || '';
@@ -84,7 +90,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return err?.message?.replace('Firebase: ', '') || "Something went wrong.";
   };
 
-  // Reusable action code settings
   const getActionCodeSettings = () => ({
     url: `${window.location.origin}/verify-email`,
     handleCodeInApp: true,
@@ -108,22 +113,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      let loggedInUser = userCredential.user;
+      const loggedInUser = userCredential.user;
 
-      // === STRONG RETRY LOGIC FOR NETLIFY / PRODUCTION ===
       await loggedInUser.reload();
       await loggedInUser.getIdToken(true);
 
+      // Reduced retry attempts for email verification check
       let attempts = 0;
-      const maxAttempts = 5;
+      const maxAttempts = 4;
 
       while (!loggedInUser.emailVerified && attempts < maxAttempts) {
         attempts++;
         console.log(`Verification check attempt ${attempts}/${maxAttempts}`);
         
-        await new Promise(resolve => setTimeout(resolve, 700)); // Wait 700ms
+        await new Promise(resolve => setTimeout(resolve, 600));
         await loggedInUser.reload();
-        await loggedInUser.getIdToken(true);
       }
 
       if (!loggedInUser.emailVerified) {
