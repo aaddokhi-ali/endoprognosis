@@ -17,6 +17,7 @@ export default function PredictorResult() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [furtherNote, setFurtherNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const { user } = useAuth();
   const router = useRouter();
@@ -100,10 +101,9 @@ export default function PredictorResult() {
     setSaving(true);
 
     try {
-      // Create a unique key for this case
       const caseKey = `${user.uid}_predictor_${result.toothNumber}_${Date.now()}`;
 
-      // === Option B: Check for exact same result saved recently ===
+      // === Check for duplicate ===
       const q = query(
         collection(db, "cases"),
         where("userId", "==", user.uid),
@@ -113,26 +113,19 @@ export default function PredictorResult() {
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
-        // Check each existing case for this tooth
         for (const doc of snapshot.docs) {
           const existing = doc.data();
-          
-          // Compare if it's the EXACT same result (same EP points and survival %)
           const isSameResult =
             existing.survivalEstimate === (result.survivalPercentage || 0) &&
             existing.epPoints === (result.totalDPI || 0) &&
             existing.pulpalDiagnosis === (result.pulpalDiagnosis || "") &&
             existing.periapicalDiagnosis === (result.periapicalDiagnosis || "");
 
-          // Check if saved within last 5 minutes
           const savedTime = existing.savedAt ? new Date(existing.savedAt).getTime() : 0;
-          const isRecent = Date.now() - savedTime < 300000; // 5 minutes
+          const isRecent = Date.now() - savedTime < 300000;
 
           if (isSameResult && isRecent) {
-            alert(
-              "This exact result was already saved recently.\n" +
-              "Please check My Cases or wait a few minutes to save again."
-            );
+            alert("This exact result was already saved recently.\nPlease check My Cases.");
             setShowSaveModal(false);
             setSaving(false);
             return;
@@ -140,11 +133,17 @@ export default function PredictorResult() {
         }
       }
 
-      // === Proceed to save the case ===
+      // === FIXED: Full caseData with all required root fields ===
       const caseData = {
         caseName: caseName.trim(),
         phoneNumber: phoneNumber.trim(),
         furtherNote: furtherNote.trim() || "",
+
+        // === IMPORTANT: Root level fields expected by My Cases ===
+        gender: result.formData?.gender || "",
+        ageGroup: result.formData?.ageGroup || "",
+        asa: result.formData?.medical || "0",                    // Medical History (ASA)
+        periodontalStatus: result.formData?.perio || "0",       // Periodontal Status
 
         toothNumber: result.toothNumber || "",
         toothType: result.toothType || "Molar",
@@ -170,14 +169,12 @@ export default function PredictorResult() {
         savedAt: new Date().toISOString(),
       };
 
-      // Use addDoc - auto-generates unique ID, never "already exists" error
       const docRef = await addDoc(collection(db, "cases"), caseData);
-
+      
       console.log("✅ Case saved with ID:", docRef.id);
 
-      // Reset modal state
       setShowSaveModal(false);
-      setCaseName("");
+      setCaseName(""); 
       setPhoneNumber("");
       setFurtherNote("");
 
@@ -189,9 +186,7 @@ export default function PredictorResult() {
       console.error("❌ Save Error:", error.code, error.message);
 
       if (error.code === "permission-denied") {
-        alert("Permission denied. Please check your login status or Firestore rules.");
-      } else if (error.code === "unavailable") {
-        alert("Network error. Please check your connection and try again.");
+        alert("Permission denied. Check Firestore rules.");
       } else {
         alert("Failed to save case. Please try again.");
       }
@@ -200,9 +195,104 @@ export default function PredictorResult() {
     }
   };
 
-  // Simple PDF Export
-  const exportAsPDF = () => {
-    window.print();
+  // ==================== PROFESSIONAL PDF EXPORT (Same as Dental Trauma Center) ====================
+  const exportAsPDF = async () => {
+    if (!result) {
+      alert("Please generate the protocol first!");
+      return;
+    }
+
+    try {
+      setIsGeneratingPDF(true);
+
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+
+      let cleanHTML = `
+        <div style="font-family: system-ui, -apple-system, sans-serif; color: white; background: #0a1428; padding: 40px 30px; line-height: 1.6;">
+          <div style="text-align: center; margin-bottom: 40px;">
+            <h1 style="font-size: 42px; font-weight: bold; background: linear-gradient(to right, #0f6cbd, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+              Prediction Result
+            </h1>
+            <p style="font-size: 24px; color: #60a5fa;">Tooth #${result.toothNumber}</p>
+          </div>
+
+          <div style="background: #1e2937; padding: 30px; border-radius: 16px; margin-bottom: 30px; text-align: center;">
+            <p style="font-size: 20px; color: #9ca3af;">4-Year Survival Probability</p>
+            <div style="font-size: 72px; font-weight: bold; color: #60a5fa; margin: 20px 0;">
+              ${(result.survivalPercentage || 0).toFixed(1)}%
+            </div>
+            <p style="color: #9ca3af; max-width: 600px; margin: 0 auto;">
+              This estimate depends on the quality of the final restoration, the patient’s compliance with oral hygiene measures, absence of parafunctional habits (such as bruxism), and other clinical factors.
+            </p>
+          </div>
+
+          <div style="background: #1e2937; padding: 25px; border-radius: 16px; margin-bottom: 30px; text-align: center;">
+            <p style="font-size: 20px;"><strong>Diagnosis:</strong> ${result.pulpalDiagnosis} with ${result.periapicalDiagnosis}</p>
+          </div>
+
+          <div style="background: #0f172a; padding: 30px; border-radius: 16px; margin-bottom: 30px; text-align: center;">
+            <p style="color: #94a3b8; margin-bottom: 10px;">EP (Endoprognosis) Points</p>
+            <p style="font-size: 52px; font-weight: bold; color: #3b82f6;">${result.totalDPI || 0}</p>
+          </div>
+
+          <div style="text-align: center; padding: 30px; border-radius: 16px; font-size: 32px; font-weight: bold; margin-bottom: 30px; 
+                      ${result.isPractical 
+                        ? 'background: #052e16; border: 4px solid #10b981; color: #10b981;' 
+                        : 'background: #450a0a; border: 4px solid #ef4444; color: #ef4444;'}">
+            ${result.isPractical ? "✅ Practical to Retain" : "⚠️ Impractical to Retain"}
+          </div>
+
+          ${result.treatmentRec ? `
+          <div style="background: #1e2937; padding: 25px; border-radius: 16px; margin-bottom: 30px;">
+            <p style="font-size: 18px; color: #94a3b8;">Treatment Recommendation</p>
+            <p style="font-size: 22px; margin-top: 10px;">${result.treatmentRec}</p>
+          </div>` : ''}
+
+          ${result.affectingFactors && result.affectingFactors.length > 0 ? `
+          <div style="margin-top: 30px;">
+            <p style="font-size: 18px; color: #94a3b8; margin-bottom: 15px;">Factors Affecting Survivability:</p>
+            <ul style="list-style: none; padding: 0;">
+              ${result.affectingFactors.map((factor: string) => `
+                <li style="padding: 10px 0; border-bottom: 1px solid #334155;">• ${factor}</li>
+              `).join('')}
+            </ul>
+          </div>` : ''}
+        </div>
+      `;
+
+      const element = document.createElement("div");
+      element.innerHTML = cleanHTML;
+      document.body.appendChild(element);
+
+      const opt = {
+        margin: [15, 20, 15, 20] as [number, number, number, number],
+        filename: `Endoprognosis_Result_Tooth${result.toothNumber}_${new Date().toISOString().slice(0,10)}.pdf`,
+        image: { type: "jpeg" as const, quality: 0.98 },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#0a1428",
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: "mm", 
+          format: "a4", 
+          orientation: "portrait" as const
+        }
+      };
+
+      await html2pdf().from(element).set(opt).save();
+
+      document.body.removeChild(element);
+      alert("✅ PDF successfully downloaded!");
+
+    } catch (error) {
+      console.error("PDF Error:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   if (!result) {
@@ -338,9 +428,10 @@ export default function PredictorResult() {
               </button>
               <button
                 onClick={exportAsPDF}
-                className="flex-1 bg-white/10 hover:bg-white/20 font-bold py-6 rounded-2xl text-xl transition-all active:scale-[0.98]"
+                disabled={isGeneratingPDF}
+                className="flex-1 bg-white/10 hover:bg-white/20 font-bold py-6 rounded-2xl text-xl transition-all active:scale-[0.98] disabled:opacity-50"
               >
-                📄 Export as PDF
+                {isGeneratingPDF ? "Generating PDF..." : "📄 Export as PDF"}
               </button>
             </div>
 
