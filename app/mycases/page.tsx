@@ -284,17 +284,22 @@ const saveEdit = async (caseId: string) => {
     return;
   }
 
+  if (!editForm.caseName?.trim()) {
+    alert("Case name cannot be empty.");
+    return;
+  }
+
   try {
-    console.log("📤 Updating case:", caseId, "by user:", user.uid);
+    console.log("📤 Updating case:", caseId);
 
     const caseRef = doc(db, "cases", caseId);
     
     const updateData = {
-      caseName: editForm.caseName || "",
-      phoneNumber: editForm.phoneNumber || "",
+      caseName: editForm.caseName.trim(),
+      phoneNumber: editForm.phoneNumber?.trim() || "",
       treatmentStatus: editForm.treatmentStatus || "No Treatment",
       followUpDate: editForm.followUpDate || null,
-      furtherNote: editForm.furtherNote || "",
+      furtherNote: editForm.furtherNote?.trim() || "",
       gender: editForm.gender || "",
       ageGroup: editForm.ageGroup || "",
       asa: editForm.asa || "",
@@ -304,6 +309,7 @@ const saveEdit = async (caseId: string) => {
 
     await updateDoc(caseRef, updateData);
 
+    // Update local state
     setCases(prev => prev.map(c => 
       c.id === caseId ? { ...c, ...updateData } : c
     ));
@@ -312,38 +318,48 @@ const saveEdit = async (caseId: string) => {
     setEditForm({});
     alert("✅ Case updated successfully!");
     
-    console.log("✅ Case updated successfully");
   } catch (err: any) {
     console.error("❌ Update failed:", err.code, err.message);
-    if (err.code === "permission-denied") {
-      alert("Permission denied. Check console logs.");
+    
+    if (err.code === "not-found") {
+      alert("This case no longer exists. Please refresh the page.");
+      // Remove from local list
+      setCases(prev => prev.filter(c => c.id !== caseId));
+    } else if (err.code === "permission-denied") {
+      alert("Permission denied.");
     } else {
       alert("Failed to update case. Please try again.");
     }
   }
 };
 
- const deleteCase = async (caseId: string) => {
+const deleteCase = async (caseId: string) => {
   if (!confirm("Are you sure you want to permanently delete this case?")) {
     return;
   }
 
   if (authLoading || !user?.uid) {
-    alert("Authentication issue. Please refresh the page and try again.");
+    alert("Please refresh the page and try again.");
     return;
   }
 
   setDeletingId(caseId);
-  console.log("🗑️ Attempting to delete case:", caseId);
+  console.log("🗑️ Deleting case:", caseId);
 
   try {
     await deleteDoc(doc(db, "cases", caseId));
-    console.log("✅ Case deleted successfully");
+    
+    // Optimistic remove from UI
+    setCases(prev => prev.filter(c => c.id !== caseId));
+    
     alert("✅ Case deleted successfully.");
+    console.log("✅ Case deleted successfully");
   } catch (err: any) {
     console.error("❌ Delete failed:", err.code, err.message);
-    if (err.code === "permission-denied") {
-      alert("Permission denied. Check console logs.");
+    
+    if (err.code === "not-found") {
+      alert("This case was already deleted.");
+      setCases(prev => prev.filter(c => c.id !== caseId));
     } else {
       alert("Failed to delete case. Please try again.");
     }
