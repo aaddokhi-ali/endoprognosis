@@ -108,129 +108,109 @@ export default function PredictorResult() {
   };
 
   // ==================== FIXED SAVE FUNCTION ====================
-  const handleSaveCase = async () => {
-    if (authLoading) {
-      alert("Authentication is still loading. Please wait a moment.");
-      return;
-    }
+ const handleSaveCase = async () => {
+  if (authLoading) {
+    alert("Authentication is still loading. Please wait.");
+    return;
+  }
+  if (!user?.uid) {
+    alert("Please log in to save cases.");
+    return;
+  }
+  if (!caseName?.trim() || !phoneNumber?.trim()) {
+    alert("Please fill in Case Name and Phone Number");
+    return;
+  }
+  if (saving) return;   // Prevent multiple clicks
 
-    if (!user?.uid) {
-      alert("Please log in to save cases.");
-      return;
-    }
+  setSaving(true);
+  console.log("🚀 Starting save with user:", user.uid);
 
-    if (!caseName?.trim() || !phoneNumber?.trim()) {
-      alert("Please fill in Case Name and Phone Number");
-      return;
-    }
+  try {
+    const caseKey = `${user.uid}_predictor_${result.toothNumber}_${Date.now()}`;
 
-    if (saving) return;
+    // Quick duplicate check
+    const q = query(
+      collection(db, "cases"),
+      where("userId", "==", user.uid),
+      where("toothNumber", "==", result.toothNumber),
+      where("type", "==", "predictor")
+    );
+    const snapshot = await getDocs(q);
 
-    setSaving(true);
-    console.log("🚀 Starting save with user:", user.uid);
+    if (!snapshot.empty) {
+      for (const docSnap of snapshot.docs) {
+        const existing = docSnap.data();
+        const isSameResult =
+          existing.survivalEstimate === (result.survivalPercentage || 0) &&
+          existing.epPoints === (result.totalDPI || 0) &&
+          existing.pulpalDiagnosis === (result.pulpalDiagnosis || "") &&
+          existing.periapicalDiagnosis === (result.periapicalDiagnosis || "");
 
-    try {
-      const caseKey = `${user.uid}_predictor_${result.toothNumber}_${Date.now()}`;
-
-      // Strong duplicate check
-      const q = query(
-        collection(db, "cases"),
-        where("userId", "==", user.uid),
-        where("toothNumber", "==", result.toothNumber),
-        where("type", "==", "predictor")
-      );
-      const snapshot = await getDocs(q);
-
-      if (!snapshot.empty) {
-        for (const docSnap of snapshot.docs) {
-          const existing = docSnap.data();
-          const isSameResult =
-            existing.survivalEstimate === (result.survivalPercentage || 0) &&
-            existing.epPoints === (result.totalDPI || 0) &&
-            existing.pulpalDiagnosis === (result.pulpalDiagnosis || "") &&
-            existing.periapicalDiagnosis === (result.periapicalDiagnosis || "");
-
-          if (isSameResult) {
-            alert("This case was already saved.\n\nPlease check My Cases page.");
-            setShowSaveModal(false);
-            setSaving(false);
-            return;
-          }
+        if (isSameResult) {
+          alert("This case was already saved.\n\nPlease check My Cases.");
+          setShowSaveModal(false);
+          setSaving(false);
+          return;
         }
       }
-
-      // Full case data (all information sent to My Cases)
-      const caseData = {
-        caseName: caseName.trim(),
-        phoneNumber: phoneNumber.trim(),
-        furtherNote: furtherNote.trim() || "",
-
-        // Patient Information
-        gender: result.formData?.gender || "",
-        ageGroup: result.formData?.ageGroup || "",
-        asa: result.formData?.medical || "0",                    // Medical History (ASA)
-        periodontalStatus: result.formData?.perio || "0",       // Periodontal Status
-
-        // Tooth & Prediction Data
-        toothNumber: result.toothNumber || "",
-        toothType: result.toothType || "Molar",
-        survivalEstimate: result.survivalPercentage || 0,
-        epPoints: result.totalDPI || 0,
-        pulpalDiagnosis: result.pulpalDiagnosis || "",
-        periapicalDiagnosis: result.periapicalDiagnosis || "",
-        treatmentRec: result.treatmentRec || "",
-        isPractical: result.isPractical ?? false,
-        affectingFactors: Array.isArray(result.affectingFactors) ? result.affectingFactors : [],
-
-        // Full nested data for future use
-        patientInputs: result.formData || {},
-        predictionResult: {
-          survivalPercentage: result.survivalPercentage || 0,
-          totalDPI: result.totalDPI || 0,
-          affectingFactors: Array.isArray(result.affectingFactors) ? result.affectingFactors : [],
-        },
-
-        type: "predictor",
-        userId: user.uid,
-        caseKey: caseKey,
-        createdAt: serverTimestamp(),
-        savedAt: new Date().toISOString(),
-      };
-
-      const newCaseRef = doc(db, "cases", caseKey);
-
-      console.log("📤 Saving case with ID:", caseKey);
-      await setDoc(newCaseRef, caseData);
-
-      console.log("✅ Case saved successfully with ID:", caseKey);
-
-      setShowSaveModal(false);
-      setCaseName("");
-      setPhoneNumber("");
-      setFurtherNote("");
-
-      // Clear last result so user doesn't save the same one again immediately
-      localStorage.removeItem("lastCalculationResult");
-
-      setTimeout(() => {
-        alert("✅ Case saved successfully!");
-      }, 200);
-
-    } catch (error: any) {
-      console.error("❌ Save Error:", error.code, error.message);
-      console.error("Full error object:", error);
-
-      if (error.code === "already-exists") {
-        alert("This case already exists. Please check My Cases.");
-      } else if (error.code === "permission-denied") {
-        alert("Permission denied. Check Firestore rules.");
-      } else {
-        alert("Failed to save case. Please try again.");
-      }
-    } finally {
-      setSaving(false);
     }
-  };
+
+    const newCaseRef = doc(db, "cases", caseKey);
+
+    const caseData = {
+      caseName: caseName.trim(),
+      phoneNumber: phoneNumber.trim(),
+      furtherNote: furtherNote.trim() || "",
+
+      gender: result.formData?.gender || "",
+      ageGroup: result.formData?.ageGroup || "",
+      asa: result.formData?.medical || "0",
+      periodontalStatus: result.formData?.perio || "0",
+
+      toothNumber: result.toothNumber || "",
+      toothType: result.toothType || "Molar",
+      survivalEstimate: result.survivalPercentage || 0,
+      epPoints: result.totalDPI || 0,
+      pulpalDiagnosis: result.pulpalDiagnosis || "",
+      periapicalDiagnosis: result.periapicalDiagnosis || "",
+      treatmentRec: result.treatmentRec || "",
+      isPractical: result.isPractical ?? false,
+      affectingFactors: Array.isArray(result.affectingFactors) ? result.affectingFactors : [],
+
+      patientInputs: result.formData || {},
+      predictionResult: {
+        survivalPercentage: result.survivalPercentage || 0,
+        totalDPI: result.totalDPI || 0,
+        affectingFactors: Array.isArray(result.affectingFactors) ? result.affectingFactors : [],
+      },
+
+      type: "predictor",
+      userId: user.uid,
+      caseKey: caseKey,
+      createdAt: serverTimestamp(),
+      savedAt: new Date().toISOString(),
+    };
+
+    await setDoc(newCaseRef, caseData);
+
+    console.log("✅ Case saved successfully with ID:", caseKey);
+
+    setShowSaveModal(false);
+    setCaseName("");
+    setPhoneNumber("");
+    setFurtherNote("");
+    localStorage.removeItem("lastCalculationResult");
+
+    alert("✅ Case saved successfully!");
+
+  } catch (error: any) {
+    console.error("❌ Save Error:", error.code, error.message);
+    alert("Failed to save case. Please try again.");
+  } finally {
+    setSaving(false);
+  }
+};
 
   // ==================== PROFESSIONAL PDF EXPORT ====================
   const exportAsPDF = async () => {
@@ -540,13 +520,13 @@ export default function PredictorResult() {
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={handleSaveCase}
-                  disabled={saving || !caseName.trim() || !phoneNumber.trim()}
-                  className="flex-1 py-4 bg-[#10b981] hover:bg-[#0ea46c] rounded-2xl font-semibold disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : "💾 Save Case"}
-                </button>
+               <button
+  onClick={handleSaveCase}
+  disabled={saving || !caseName.trim() || !phoneNumber.trim()}
+  className="flex-1 py-4 bg-[#10b981] hover:bg-[#0ea46c] rounded-2xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+>
+  {saving ? "Saving Case... Please wait" : "💾 Save Case"}
+</button>
               </div>
             </div>
           </div>
