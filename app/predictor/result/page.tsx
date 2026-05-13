@@ -5,7 +5,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
-import { addDoc, collection, serverTimestamp, query, where, getDocs } from "firebase/firestore";
+import { 
+  collection, 
+  serverTimestamp, 
+  query, 
+  where, 
+  getDocs,
+  setDoc, 
+  doc 
+} from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import Navigation from "../../components/navigation";
 import ProtectedRoute from "../../components/protectedroute";
@@ -99,7 +107,7 @@ export default function PredictorResult() {
     window.location.href = "/restorative";
   };
 
-  // Enhanced Save Function with Option B - More specific duplicate check
+  // ==================== FIXED SAVE FUNCTION ====================
   const handleSaveCase = async () => {
     if (authLoading) {
       alert("Authentication is still loading. Please wait a moment.");
@@ -110,18 +118,21 @@ export default function PredictorResult() {
       alert("Please log in to save cases.");
       return;
     }
+
     if (!caseName?.trim() || !phoneNumber?.trim()) {
       alert("Please fill in Case Name and Phone Number");
       return;
     }
+
     if (saving) return;
 
     setSaving(true);
+    console.log("🚀 Starting save with user:", user.uid);
 
     try {
       const caseKey = `${user.uid}_predictor_${result.toothNumber}_${Date.now()}`;
 
-      // === Check for duplicate ===
+      // Strong duplicate check
       const q = query(
         collection(db, "cases"),
         where("userId", "==", user.uid),
@@ -131,19 +142,16 @@ export default function PredictorResult() {
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
-        for (const doc of snapshot.docs) {
-          const existing = doc.data();
+        for (const docSnap of snapshot.docs) {
+          const existing = docSnap.data();
           const isSameResult =
             existing.survivalEstimate === (result.survivalPercentage || 0) &&
             existing.epPoints === (result.totalDPI || 0) &&
             existing.pulpalDiagnosis === (result.pulpalDiagnosis || "") &&
             existing.periapicalDiagnosis === (result.periapicalDiagnosis || "");
 
-          const savedTime = existing.savedAt ? new Date(existing.savedAt).getTime() : 0;
-          const isRecent = Date.now() - savedTime < 300000;
-
-          if (isSameResult && isRecent) {
-            alert("This exact result was already saved recently.\nPlease check My Cases.");
+          if (isSameResult) {
+            alert("This case was already saved.\n\nPlease check My Cases page.");
             setShowSaveModal(false);
             setSaving(false);
             return;
@@ -151,18 +159,19 @@ export default function PredictorResult() {
         }
       }
 
-      // === FIXED: Full caseData with all required root fields ===
+      // Full case data (all information sent to My Cases)
       const caseData = {
         caseName: caseName.trim(),
         phoneNumber: phoneNumber.trim(),
         furtherNote: furtherNote.trim() || "",
 
-        // === IMPORTANT: Root level fields expected by My Cases ===
+        // Patient Information
         gender: result.formData?.gender || "",
         ageGroup: result.formData?.ageGroup || "",
         asa: result.formData?.medical || "0",                    // Medical History (ASA)
         periodontalStatus: result.formData?.perio || "0",       // Periodontal Status
 
+        // Tooth & Prediction Data
         toothNumber: result.toothNumber || "",
         toothType: result.toothType || "Molar",
         survivalEstimate: result.survivalPercentage || 0,
@@ -173,6 +182,7 @@ export default function PredictorResult() {
         isPractical: result.isPractical ?? false,
         affectingFactors: Array.isArray(result.affectingFactors) ? result.affectingFactors : [],
 
+        // Full nested data for future use
         patientInputs: result.formData || {},
         predictionResult: {
           survivalPercentage: result.survivalPercentage || 0,
@@ -182,34 +192,38 @@ export default function PredictorResult() {
 
         type: "predictor",
         userId: user.uid,
-        caseKey,
+        caseKey: caseKey,
         createdAt: serverTimestamp(),
         savedAt: new Date().toISOString(),
       };
 
-      console.log("📤 Sending to Firestore with userId:", caseData.userId);
+      const newCaseRef = doc(db, "cases", caseKey);
 
-      const docRef = await addDoc(collection(db, "cases"), caseData);
-      
-      console.log("✅ Case saved with ID:", docRef.id);
+      console.log("📤 Saving case with ID:", caseKey);
+      await setDoc(newCaseRef, caseData);
+
+      console.log("✅ Case saved successfully with ID:", caseKey);
 
       setShowSaveModal(false);
-      setCaseName(""); 
+      setCaseName("");
       setPhoneNumber("");
       setFurtherNote("");
 
+      // Clear last result so user doesn't save the same one again immediately
+      localStorage.removeItem("lastCalculationResult");
+
       setTimeout(() => {
         alert("✅ Case saved successfully!");
-      }, 150);
+      }, 200);
 
     } catch (error: any) {
       console.error("❌ Save Error:", error.code, error.message);
       console.error("Full error object:", error);
 
-      if (error.code === "permission-denied") {
-        alert("Permission denied. Check Firestore rules and console logs.");
-      } else if (error.code === "unauthenticated") {
-        alert("You are not authenticated. Please log out and log in again.");
+      if (error.code === "already-exists") {
+        alert("This case already exists. Please check My Cases.");
+      } else if (error.code === "permission-denied") {
+        alert("Permission denied. Check Firestore rules.");
       } else {
         alert("Failed to save case. Please try again.");
       }
@@ -218,7 +232,7 @@ export default function PredictorResult() {
     }
   };
 
-  // ==================== PROFESSIONAL PDF EXPORT (Same as Dental Trauma Center) ====================
+  // ==================== PROFESSIONAL PDF EXPORT ====================
   const exportAsPDF = async () => {
     if (!result) {
       alert("Please generate the protocol first!");
@@ -342,7 +356,7 @@ export default function PredictorResult() {
         {/* Hero Section */}
         <div
           className="relative h-[420px] bg-cover bg-center"
-          style={{ backgroundImage: "url('[iili.io](https://iili.io/Bw4dt99.jpg)')" }}
+          style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')" }}
         >
           <div className="absolute inset-0 bg-black/75"></div>
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
