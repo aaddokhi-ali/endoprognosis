@@ -13,7 +13,8 @@ import {
   doc, 
   updateDoc,
   deleteDoc,
-  onSnapshot 
+  onSnapshot,
+  serverTimestamp   // ← Added (needed for updatedAt)
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import Navigation from "../components/navigation";
@@ -272,7 +273,7 @@ useEffect(() => {
     });
   };
 
-  const saveEdit = async (caseId: string) => {
+const saveEdit = async (caseId: string) => {
   if (authLoading) {
     alert("Authentication is still loading. Please wait.");
     return;
@@ -284,7 +285,7 @@ useEffect(() => {
   }
 
   try {
-    console.log("📤 Updating case:", caseId, "with user:", user.uid);
+    console.log("📤 Updating case:", caseId, "by user:", user.uid);
 
     const caseRef = doc(db, "cases", caseId);
     
@@ -298,12 +299,11 @@ useEffect(() => {
       ageGroup: editForm.ageGroup || "",
       asa: editForm.asa || "",
       periodontalStatus: editForm.periodontalStatus || "",
-      updatedAt: new Date().toISOString(),   // better than new Date() for Firestore
+      updatedAt: serverTimestamp(),
     };
 
     await updateDoc(caseRef, updateData);
 
-    // Optimistic update
     setCases(prev => prev.map(c => 
       c.id === caseId ? { ...c, ...updateData } : c
     ));
@@ -314,29 +314,22 @@ useEffect(() => {
     
     console.log("✅ Case updated successfully");
   } catch (err: any) {
-    console.error("❌ Update failed:", {
-      code: err.code,
-      message: err.message,
-      fullError: err
-    });
-
+    console.error("❌ Update failed:", err.code, err.message);
     if (err.code === "permission-denied") {
-      alert("Permission denied.\n\nPlease check Firestore rules and console logs.");
-    } else if (err.code === "unauthenticated") {
-      alert("Your session expired. Please log out and log in again.");
+      alert("Permission denied. Check console logs.");
     } else {
-      alert("Failed to update case. Please check console for details.");
+      alert("Failed to update case. Please try again.");
     }
   }
 };
 
-  const deleteCase = async (caseId: string) => {
+ const deleteCase = async (caseId: string) => {
   if (!confirm("Are you sure you want to permanently delete this case?")) {
     return;
   }
 
   if (authLoading || !user?.uid) {
-    alert("Authentication issue. Please refresh and try again.");
+    alert("Authentication issue. Please refresh the page and try again.");
     return;
   }
 
@@ -346,18 +339,11 @@ useEffect(() => {
   try {
     await deleteDoc(doc(db, "cases", caseId));
     console.log("✅ Case deleted successfully");
-    alert("Case deleted successfully.");
+    alert("✅ Case deleted successfully.");
   } catch (err: any) {
-    console.error("❌ Delete failed:", {
-      code: err.code,
-      message: err.message,
-      fullError: err
-    });
-
+    console.error("❌ Delete failed:", err.code, err.message);
     if (err.code === "permission-denied") {
-      alert("Permission denied.\n\nCheck Firestore rules and console logs.");
-    } else if (err.code === "unauthenticated") {
-      alert("Your session expired. Please log out and log in again.");
+      alert("Permission denied. Check console logs.");
     } else {
       alert("Failed to delete case. Please try again.");
     }
@@ -365,7 +351,6 @@ useEffect(() => {
     setDeletingId(null);
   }
 };
-
 
   if (!user) {
     return (
