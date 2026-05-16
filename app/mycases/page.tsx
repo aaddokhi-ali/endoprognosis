@@ -2,62 +2,39 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import Link from "next/link";
-import { useAuth } from "../context/AuthContext";
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  getDocs, 
-  doc, 
-  updateDoc,
-  deleteDoc,
-  onSnapshot,
-  serverTimestamp   // ← Added (needed for updatedAt)
-} from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "../firebaseConfig";
+import { useAuth } from "../context/AuthContext";
 import Navigation from "../components/navigation";
 import ProtectedRoute from "../components/protectedroute";
 
 interface SavedCase {
   id: string;
   caseName: string;
-  phoneNumber: string;
-  gender: string;
-  ageGroup: string;
-  asa: string;
+  phoneNumber?: string;
+  gender?: string;
+  ageGroup?: string;
+  asa?: string;
   toothNumber: string;
   toothType: string;
-  pulpalDiagnosis: string;
-  periapicalDiagnosis: string;
-  periodontalStatus: string;
-  survivalEstimate: number;
-  treatmentRec: string;
-  isPractical: boolean;
-  affectingFactors: string[];
-  furtherNote: string;
-  treatmentStatus: string;
-  followUpDate: string | null;
-  createdAt: any;
-  savedAt: string;
-
+  pulpalDiagnosis?: string;
+  periapicalDiagnosis?: string;
+  periodontalStatus?: string;
   remainingToothStructure?: string;
   remainingPercent?: number;
-  patientInputs?: {
-    remainingPercent?: number;
-    parts?: any;
-    ferruleWalls?: any;
-    oralHygiene?: string;
-    perio?: string;
-    [key: string]: any;
-  };
-
+  affectingFactors?: string[];
+  treatmentRec?: string;
+  survivalEstimate?: number;
+  isPractical?: boolean;
+  treatmentStatus: string;
+  followUpDate: string | null;
+  furtherNote?: string;
   type?: string;
   classification?: string;
   iowaStage?: string;
   isVRF?: boolean;
-  successRate?: string;
+  createdAt: any;
 }
 
 export default function MyCases() {
@@ -65,32 +42,12 @@ export default function MyCases() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<SavedCase>>({});
   const [activeTab, setActiveTab] = useState<"All" | "Crack Cases" | "No Treatment" | "In-Progress" | "Done" | "Postpone">("All");
-  const [deletingId, setDeletingId] = useState<string | null>(null);   // <-- Added for delete loading state
 
- const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
+  const router = useRouter();
 
-// ==================== DEBUG: CURRENT USER FOR FIRESTORE ====================
-useEffect(() => {
-  console.log("🔍 [MyCases] Current user for Firestore:", {
-    uid: user?.uid,
-    email: user?.email,
-    emailVerified: user?.emailVerified,
-    isAnonymous: user?.isAnonymous,
-    authLoading: authLoading,
-    hasUser: !!user,
-  });
-}, [user, authLoading]);
-// =========================================================================
-
-  const ageGroups = ["<20", "20-30", "31-40", "41-50", "51-60", "61-70", ">70"];
-  const asaOptions = ["I", "II", "III", "IV"];
-  const perioOptions = ["None", "Localized", "Generalized"];
-  const genderOptions = ["Male", "Female"];
-
-  // Realtime listener (replaces previous one-time fetch)
+  // Realtime listener
   useEffect(() => {
     if (!user) {
       setError("Please log in to view your cases.");
@@ -110,7 +67,6 @@ useEffect(() => {
     const unsubscribe = onSnapshot(q, 
       (querySnapshot) => {
         const casesList: SavedCase[] = [];
-
         querySnapshot.forEach((doc) => {
           const data = doc.data();
           casesList.push({
@@ -119,16 +75,15 @@ useEffect(() => {
             treatmentStatus: data.treatmentStatus || "No Treatment",
             followUpDate: data.followUpDate || null,
             affectingFactors: data.affectingFactors || [],
-            type: data.type || "predictor",
           } as SavedCase);
         });
 
         setCases(casesList);
         setLoading(false);
       },
-      (err: any) => {
+      (err) => {
         console.error("Error fetching cases:", err);
-        setError("Failed to load your cases. Please try again.");
+        setError("Failed to load your cases.");
         setLoading(false);
       }
     );
@@ -139,55 +94,6 @@ useEffect(() => {
   const filteredCases = useMemo(() => {
     let result = cases;
 
-    result = result.map((c) => {
-      if (c.type === "crack-classifier") return c;
-
-      const factors = Array.isArray(c.affectingFactors) ? [...c.affectingFactors] : [];
-
-      const remainingPercent = 
-        c.patientInputs?.remainingPercent ?? 
-        c.remainingPercent ?? 
-        100;
-
-      const missingPercent = 100 - remainingPercent;
-      const ferruleWalls = c.patientInputs?.ferruleWalls || {};
-      const ferruleCount = Object.values(ferruleWalls).filter(Boolean).length;
-
-      let structureText = "";
-
-      if (missingPercent > 0) {
-        structureText = `${missingPercent}% loss of tooth structure`;
-
-        if (ferruleCount === 0) {
-          structureText += ` with no ferrule effect`;
-        } else if (ferruleCount === 1) {
-          structureText += ` with no ferrule at one side`;
-        } else if (ferruleCount < 3) {
-          structureText += ` with insufficient ferrule`;
-        }
-      } else {
-        structureText = `Adequate remaining tooth structure`;
-      }
-
-      if (!factors.some(f => f.includes("loss of tooth structure") || f.includes("Remaining tooth structure"))) {
-        factors.unshift(structureText);
-      }
-
-      const hygieneIndex = factors.findIndex(f => 
-        f.toLowerCase().includes("oral hygiene") || 
-        f.toLowerCase().includes("hygiene")
-      );
-
-      if (hygieneIndex !== -1) {
-        factors[hygieneIndex] = "Non-compliance with oral hygiene measures";
-      }
-
-      return {
-        ...c,
-        affectingFactors: factors
-      };
-    });
-
     if (searchTerm) {
       const term = searchTerm.toLowerCase().trim();
 
@@ -196,20 +102,33 @@ useEffect(() => {
           c.caseName,
           c.phoneNumber,
           c.toothNumber,
+          c.toothType,
           c.pulpalDiagnosis,
           c.periapicalDiagnosis,
           c.periodontalStatus,
-          c.classification,
-          c.iowaStage,
           c.remainingToothStructure,
+          c.gender,
+          c.ageGroup,
+          c.asa,
+          c.treatmentRec,
           ...(c.affectingFactors || [])
         ].join(" ").toLowerCase();
 
         if (searchableText.includes(term)) return true;
 
-        if (term.includes("vrf") || term.includes("vertical")) return c.isVRF === true;
-        if (term.includes("cof") || term.includes("crown")) {
-          return c.isVRF === false && c.type === "crack-classifier";
+        // Specific smart search
+        if (term.includes("female") && c.gender?.toLowerCase() === "female") return true;
+        if (term.includes("male") && c.gender?.toLowerCase() === "male") return true;
+
+        if (c.ageGroup && term.includes(c.ageGroup.toLowerCase())) return true;
+        if (c.periodontalStatus && term.includes(c.periodontalStatus.toLowerCase())) return true;
+
+        if (term.includes("perio") || term.includes("periodontal")) {
+          return (c.periodontalStatus && c.periodontalStatus !== "None");
+        }
+
+        if (term.includes("remaining") || term.includes("structure") || term.includes("ferrule")) {
+          return !!c.remainingToothStructure;
         }
 
         return false;
@@ -256,134 +175,20 @@ useEffect(() => {
     );
   }, [filteredCases]);
 
-   // ==================== EDIT & DELETE FUNCTIONS ====================
-
-  const startEditing = (c: SavedCase) => {
-    setEditingId(c.id);
-    setEditForm({
-      caseName: c.caseName,
-      phoneNumber: c.phoneNumber,
-      treatmentStatus: c.treatmentStatus || "No Treatment",
-      followUpDate: c.followUpDate || "",
-      furtherNote: c.furtherNote || "",
-      gender: c.gender,
-      ageGroup: c.ageGroup,
-      asa: c.asa,
-      periodontalStatus: c.periodontalStatus || "",
-    });
+  const openCaseDetail = (caseId: string) => {
+    router.push(`/cases/${caseId}`);
   };
-
-const saveEdit = async (caseId: string) => {
-  if (authLoading) {
-    alert("Authentication is still loading. Please wait.");
-    return;
-  }
-
-  if (!user?.uid) {
-    alert("You must be logged in to edit cases.");
-    return;
-  }
-
-  if (!editForm.caseName?.trim()) {
-    alert("Case name cannot be empty.");
-    return;
-  }
-
-  try {
-    console.log("📤 Updating case:", caseId);
-
-    const caseRef = doc(db, "cases", caseId);
-    
-    const updateData = {
-      caseName: editForm.caseName.trim(),
-      phoneNumber: editForm.phoneNumber?.trim() || "",
-      treatmentStatus: editForm.treatmentStatus || "No Treatment",
-      followUpDate: editForm.followUpDate || null,
-      furtherNote: editForm.furtherNote?.trim() || "",
-      gender: editForm.gender || "",
-      ageGroup: editForm.ageGroup || "",
-      asa: editForm.asa || "",
-      periodontalStatus: editForm.periodontalStatus || "",
-      updatedAt: serverTimestamp(),
-    };
-
-    await updateDoc(caseRef, updateData);
-
-    // Update local state
-    setCases(prev => prev.map(c => 
-      c.id === caseId ? { ...c, ...updateData } : c
-    ));
-
-    setEditingId(null);
-    setEditForm({});
-    alert("✅ Case updated successfully!");
-    
-  } catch (err: any) {
-    console.error("❌ Update failed:", err.code, err.message);
-    
-    if (err.code === "not-found") {
-      alert("This case no longer exists. Please refresh the page.");
-      // Remove from local list
-      setCases(prev => prev.filter(c => c.id !== caseId));
-    } else if (err.code === "permission-denied") {
-      alert("Permission denied.");
-    } else {
-      alert("Failed to update case. Please try again.");
-    }
-  }
-};
-
-const deleteCase = async (caseId: string) => {
-  if (!confirm("Are you sure you want to permanently delete this case?")) {
-    return;
-  }
-
-  if (authLoading || !user?.uid) {
-    alert("Please refresh the page and try again.");
-    return;
-  }
-
-  setDeletingId(caseId);
-  console.log("🗑️ Deleting case:", caseId);
-
-  try {
-    await deleteDoc(doc(db, "cases", caseId));
-    
-    // Optimistic remove from UI
-    setCases(prev => prev.filter(c => c.id !== caseId));
-    
-    alert("✅ Case deleted successfully.");
-    console.log("✅ Case deleted successfully");
-  } catch (err: any) {
-    console.error("❌ Delete failed:", err.code, err.message);
-    
-    if (err.code === "not-found") {
-      alert("This case was already deleted.");
-      setCases(prev => prev.filter(c => c.id !== caseId));
-    } else {
-      alert("Failed to delete case. Please try again.");
-    }
-  } finally {
-    setDeletingId(null);
-  }
-};
 
   if (!user) {
     return (
       <ProtectedRoute>
         <Navigation />
-        <div className="min-h-screen bg-[#0a1428] text-white flex items-center justify-center">
-          <div className="text-center">
-            <h2 className="text-2xl mb-4">Please Log In</h2>
-            <p>You need to be logged in to view your saved cases.</p>
-          </div>
+        <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
+          <p>Please log in to view your cases.</p>
         </div>
       </ProtectedRoute>
     );
   }
-
-  const totalCases = cases.length;
-  const crackCasesCount = cases.filter(c => c.type === "crack-classifier").length;
 
   return (
     <ProtectedRoute>
@@ -395,19 +200,16 @@ const deleteCase = async (caseId: string) => {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
             <div>
               <h1 className="text-4xl font-bold">My Saved Cases 📋</h1>
-              <p className="text-gray-400 mt-1">{totalCases} {totalCases === 1 ? "case" : "cases"} total</p>
-              {crackCasesCount > 0 && (
-                <p className="text-sm text-emerald-400 mt-1">{crackCasesCount} Crack Tooth Cases</p>
-              )}
+              <p className="text-gray-400 mt-1">{cases.length} cases total</p>
             </div>
 
             <div className="relative w-full md:w-96">
               <input
                 type="text"
-                placeholder="Search by name, phone, tooth, diagnosis, classification..."
+                placeholder="Search by name, phone, tooth, gender, age group, perio, remaining structure, diagnosis..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-[#1e2937] border border-gray-600 rounded-2xl pl-12 py-4 text-white placeholder-gray-400 focus:outline-none focus:border-[#0f6cbd]"
+                className="w-full bg-[#1e2937] border border-gray-600 rounded-2xl pl-12 py-4 text-white placeholder-gray-400"
               />
               <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl">🔍</span>
             </div>
@@ -431,440 +233,148 @@ const deleteCase = async (caseId: string) => {
           </div>
 
           {loading && <p className="text-center text-xl py-20">Loading your cases...</p>}
+          {error && <p className="text-center text-red-400 py-10">{error}</p>}
 
-          {error && (
-            <div className="bg-yellow-900/50 border border-yellow-500 text-yellow-200 p-6 rounded-2xl text-center mb-8">
-              {error}
-              <button onClick={() => window.location.reload()} className="mt-4 underline hover:text-white block">
-                Refresh Page
-              </button>
-            </div>
-          )}
-
-          {!loading && !error && filteredCases.length === 0 && (
+          {!loading && filteredCases.length === 0 && (
             <div className="text-center py-20">
-              <p className="text-2xl mb-4">No matching cases found</p>
+              <p className="text-2xl">No matching cases found</p>
             </div>
           )}
 
-          {/* ==================== CRACK CASES SECTION ==================== */}
+          {/* Crack Cases */}
           {activeTab === "Crack Cases" && filteredCases.length > 0 && (
             <div className="mb-16">
-              <h2 className="text-3xl font-semibold mb-8 flex items-center gap-3">
-                🦷 Crack Tooth Cases 
-                <span className="text-gray-400 text-lg font-normal">({filteredCases.length})</span>
-              </h2>
-
+              <h2 className="text-3xl font-semibold mb-8">🦷 Crack Tooth Cases ({filteredCases.length})</h2>
               <div className="grid gap-6">
                 {filteredCases.map((c) => (
-                  <div 
-                    key={c.id} 
-                    className="bg-[#1e2937] rounded-3xl p-8 border border-gray-700 hover:border-red-500 transition-all duration-300"
-                  >
-                    <div className="flex flex-col lg:flex-row justify-between gap-8">
-                      <div className="flex-1">
-                        {editingId === c.id ? (
-                          <>
-                            <input
-                              type="text"
-                              value={editForm.caseName || ""}
-                              onChange={(e) => setEditForm({ ...editForm, caseName: e.target.value })}
-                              className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 text-white text-2xl font-bold mb-3"
-                            />
-                            <input
-                              type="tel"
-                              value={editForm.phoneNumber || ""}
-                              onChange={(e) => setEditForm({ ...editForm, phoneNumber: e.target.value })}
-                              className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3 text-white mb-4"
-                              placeholder="Phone Number"
-                            />
-                          </>
-                        ) : (
-                          <>
-                            <h3 className="text-3xl font-bold">{c.caseName}</h3>
-                            <p className="text-[#60a5fa] text-xl font-medium mt-2 flex items-center gap-2">
-                              📞 {c.phoneNumber}
-                            </p>
-                            <p className="text-gray-400 mt-3 text-lg">
-                              Tooth #{c.toothNumber} • {c.toothType || "—"}
-                            </p>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="text-right">
-                        <div className="inline-block bg-red-500/10 border border-red-500/30 rounded-2xl px-6 py-4 min-w-[200px]">
-                          <p className="text-red-400 text-xs font-medium tracking-widest uppercase">Crack Classification</p>
-                          <div className="text-4xl font-bold text-white mt-2">
-                            {c.classification || "Not Classified"}
-                          </div>
-                          {c.iowaStage && (
-                            <p className="text-emerald-400 mt-1">Iowa Stage: {c.iowaStage}</p>
-                          )}
-                        </div>
-
-                        {c.isVRF !== undefined && (
-                          <div className={`mt-4 inline-block px-5 py-2 rounded-full text-sm font-semibold ${
-                            c.isVRF ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
-                          }`}>
-                            {c.isVRF ? "⚠️ VRF Suspected" : "✅ No VRF"}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
-                      <div>
-                        <span className="text-gray-400 block mb-1">Gender / Age</span>
-                        {editingId === c.id ? (
-                          <div className="flex gap-2">
-                            <select
-                              value={editForm.gender || ""}
-                              onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
-                              className="bg-[#0f172a] border border-gray-600 rounded-xl p-2 text-white flex-1"
-                            >
-                              <option value="">Gender</option>
-                              {genderOptions.map(g => (
-                                <option key={g} value={g}>{g}</option>
-                              ))}
-                            </select>
-                            <select
-                              value={editForm.ageGroup || ""}
-                              onChange={(e) => setEditForm({ ...editForm, ageGroup: e.target.value })}
-                              className="bg-[#0f172a] border border-gray-600 rounded-xl p-2 text-white flex-1"
-                            >
-                              <option value="">Age Group</option>
-                              {ageGroups.map(age => (
-                                <option key={age} value={age}>{age}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <p className="font-medium">{c.gender}, {c.ageGroup}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <span className="text-gray-400 block mb-1">ASA</span>
-                        {editingId === c.id ? (
-                          <select
-                            value={editForm.asa || ""}
-                            onChange={(e) => setEditForm({ ...editForm, asa: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-xl p-2 text-white"
-                          >
-                            <option value="">Select ASA</option>
-                            {asaOptions.map(asa => (
-                              <option key={asa} value={asa}>ASA {asa}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p className="font-medium">{c.asa}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <span className="text-gray-400 block mb-1">Perio Status</span>
-                        {editingId === c.id ? (
-                          <select
-                            value={editForm.periodontalStatus || ""}
-                            onChange={(e) => setEditForm({ ...editForm, periodontalStatus: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-xl p-2 text-white"
-                          >
-                            <option value="">Select Status</option>
-                            {perioOptions.map(status => (
-                              <option key={status} value={status}>{status}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p className="font-medium">{c.periodontalStatus || "—"}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-10 pt-6 border-t border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Treatment Status</label>
-                        {editingId === c.id ? (
-                          <select
-                            value={editForm.treatmentStatus || "No Treatment"}
-                            onChange={(e) => setEditForm({ ...editForm, treatmentStatus: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3"
-                          >
-                            <option value="No Treatment">No Treatment</option>
-                            <option value="In-Progress">In Progress</option>
-                            <option value="Done">Treatment Done</option>
-                            <option value="Postpone">Postpone</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-lg">{c.treatmentStatus || "No Treatment"}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Follow-up Date</label>
-                        {editingId === c.id ? (
-                          <input
-                            type="date"
-                            value={editForm.followUpDate || ""}
-                            onChange={(e) => setEditForm({ ...editForm, followUpDate: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3"
-                          />
-                        ) : (
-                          <p className="font-medium">
-                            {c.followUpDate 
-                              ? new Date(c.followUpDate).toLocaleDateString() 
-                              : "Not set"}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="md:col-span-2">
-                        <label className="block text-sm text-gray-400 mb-2">Further Note</label>
-                        {editingId === c.id ? (
-                          <textarea
-                            value={editForm.furtherNote || ""}
-                            onChange={(e) => setEditForm({ ...editForm, furtherNote: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 h-24 resize-y"
-                            placeholder="Add clinical notes or observations..."
-                          />
-                        ) : (
-                          <p className="text-gray-300 italic">
-                            {c.furtherNote || "No notes added"}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-6 text-xs text-gray-500 border-t border-gray-700 pt-4">
-                      Added on: {c.createdAt ? 
-                        new Date(c.createdAt.seconds * 1000).toLocaleDateString('en-GB', {
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric'
-                        }) : "Unknown date"}
-                    </div>
-
-                    <div className="mt-8 flex gap-4">
-                      {editingId === c.id ? (
-                        <>
-                          <button 
-                            onClick={() => saveEdit(c.id)} 
-                            className="flex-1 bg-[#10b981] hover:bg-[#0ea46c] py-4 rounded-2xl font-semibold"
-                          >
-                            Save Changes
-                          </button>
-                          <button 
-                            onClick={() => { setEditingId(null); setEditForm({}); }} 
-                            className="flex-1 bg-gray-700 hover:bg-gray-600 py-4 rounded-2xl font-semibold"
-                          >
-                            Cancel
-                          </button>
-                          <button 
-                            onClick={() => deleteCase(c.id)} 
-                            disabled={deletingId === c.id}
-                            className="px-8 py-4 bg-red-600 hover:bg-red-700 rounded-2xl font-semibold text-white disabled:opacity-50"
-                          >
-                            {deletingId === c.id ? "Deleting..." : "Delete"}
-                          </button>
-                        </>
-                      ) : (
-                        <button 
-                          onClick={() => startEditing(c)} 
-                          className="flex-1 bg-[#0f6cbd] hover:bg-[#0a5a9c] py-4 rounded-2xl font-semibold"
-                        >
-                          Edit Case
-                        </button>
+                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-8 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-2xl font-bold">{c.caseName}</h3>
+                      {c.phoneNumber && (
+                        <p className="text-[#60a5fa] text-lg mt-2 flex items-center gap-2">
+                          📞 {c.phoneNumber}
+                        </p>
                       )}
+                      <p className="text-gray-400 mt-1">Tooth #{c.toothNumber}</p>
                     </div>
+                    <button
+                      onClick={() => openCaseDetail(c.id)}
+                      className="bg-[#0f6cbd] hover:bg-[#0a5a9c] px-8 py-4 rounded-2xl font-semibold"
+                    >
+                      View Details
+                    </button>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* ==================== PREDICTOR CASES SECTION ==================== */}
+          {/* Predictor Cases */}
           {activeTab !== "Crack Cases" && Object.entries(categorizedCases).map(([category, caseList]) => (
             <div key={category} className="mb-16">
-              <h2 className="text-2xl font-semibold mb-6 flex items-center gap-3 border-b border-gray-700 pb-3">
-                {category.includes("RCT") && "🦷"}
-                {category.includes("RCreT") && "🔄"}
-                {category.includes("Apico") && "🔬"}
-                {category.includes("VPT") && "🌱"}
-                {category.includes("Other") && "📁"}
-                {category} 
-                <span className="text-gray-400 text-lg font-normal">({caseList.length})</span>
+              <h2 className="text-2xl font-semibold mb-6 border-b border-gray-700 pb-3">
+                {category} <span className="text-gray-400">({caseList.length})</span>
               </h2>
 
               <div className="grid gap-6">
                 {caseList.map((c) => (
-                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-8 border border-gray-700 hover:border-[#0f6cbd] transition-all">
-                    <div className="flex flex-col md:flex-row justify-between gap-6">
+                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-8 hover:border-[#0f6cbd] border border-transparent transition-all">
+                    <div className="flex flex-col lg:flex-row justify-between gap-8">
                       <div className="flex-1">
-                        {editingId === c.id ? (
-                          <>
-                            <input
-                              type="text"
-                              value={editForm.caseName || ""}
-                              onChange={(e) => setEditForm({ ...editForm, caseName: e.target.value })}
-                              className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3 text-white text-2xl font-bold mb-2"
-                            />
-                            <input
-                              type="tel"
-                              value={editForm.phoneNumber || ""}
-                              onChange={(e) => setEditForm({ ...editForm, phoneNumber: e.target.value })}
-                              className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3 text-white"
-                              placeholder="Phone Number"
-                            />
-                          </>
-                        ) : (
-                          <>
-                            <h3 className="text-2xl font-bold">{c.caseName}</h3>
-                            <p className="text-[#60a5fa] text-lg font-medium mt-1 flex items-center gap-2">
-                              📞 {c.phoneNumber}
-                            </p>
-                            <p className="text-gray-400 mt-1">
-                              Tooth #{c.toothNumber} • {c.toothType}
-                            </p>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="text-right">
-                        <div className="text-5xl font-bold text-[#60a5fa]">{c.survivalEstimate}%</div>
-                        <div className={`text-sm font-medium mt-1 ${c.isPractical ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
-                          {c.isPractical ? '✅ Practical to Retain' : '⚠️ Impractical to Retain'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
-                      <div>
-                        <span className="text-gray-400 block">Gender / Age</span>
-                        <p>{c.gender}, {c.ageGroup}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 block">ASA</span>
-                        <p className="font-medium">{c.asa}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 block">Perio Status</span>
-                        <p>{c.periodontalStatus}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 block">Diagnosis</span>
-                        <p className="font-medium">{c.pulpalDiagnosis}</p>
-                      </div>
-                    </div>
-
-                    {c.remainingToothStructure && (
-                      <div className="mt-6 p-4 bg-[#0f172a] rounded-2xl border border-gray-700">
-                        <p className="text-gray-400 text-sm">Remaining Tooth Structure</p>
-                        <p className="font-medium text-white mt-1">{c.remainingToothStructure}</p>
-                      </div>
-                    )}
-
-                    {c.affectingFactors && c.affectingFactors.length > 0 && (
-                      <div className="mt-6">
-                        <p className="text-gray-400 text-sm mb-2">Survival affected by:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {c.affectingFactors.map((factor, i) => (
-                            <span key={i} className="text-xs bg-gray-800 px-3 py-1 rounded-full text-gray-300">
-                              {factor}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mt-8 pt-6 border-t border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Treatment Status</label>
-                        {editingId === c.id ? (
-                          <select
-                            value={editForm.treatmentStatus || "No Treatment"}
-                            onChange={(e) => setEditForm({ ...editForm, treatmentStatus: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3"
-                          >
-                            <option value="No Treatment">No Treatment</option>
-                            <option value="In-Progress">In Progress</option>
-                            <option value="Done">Treatment Done</option>
-                            <option value="Postpone">Postpone</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-lg">{c.treatmentStatus || "No Treatment"}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Follow-up Date</label>
-                        {editingId === c.id ? (
-                          <input
-                            type="date"
-                            value={editForm.followUpDate || ""}
-                            onChange={(e) => setEditForm({ ...editForm, followUpDate: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-3"
-                          />
-                        ) : (
-                          <p className="font-medium">
-                            {c.followUpDate ? new Date(c.followUpDate).toLocaleDateString() : "Not set"}
+                        <h3 className="text-2xl font-bold">{c.caseName}</h3>
+                        
+                        {/* Phone Number Added */}
+                        {c.phoneNumber && (
+                          <p className="text-[#60a5fa] text-lg mt-2 flex items-center gap-2">
+                            📞 {c.phoneNumber}
                           </p>
                         )}
-                      </div>
 
-                      <div className="md:col-span-2">
-                        <label className="block text-sm text-gray-400 mb-2">Further Note</label>
-                        {editingId === c.id ? (
-                          <textarea
-                            value={editForm.furtherNote || ""}
-                            onChange={(e) => setEditForm({ ...editForm, furtherNote: e.target.value })}
-                            className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 h-24 resize-y"
-                            placeholder="Add clinical notes or observations..."
-                          />
-                        ) : (
-                          <p className="text-gray-300 italic">
-                            {c.furtherNote || "No notes added"}
-                          </p>
+                        <p className="text-[#60a5fa] text-lg mt-1">
+                          Tooth #{c.toothNumber} • {c.toothType}
+                        </p>
+
+                        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-400 block">Gender / Age</span>
+                            <p className="font-medium">{c.gender || "—"} • {c.ageGroup || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block">ASA</span>
+                            <p className="font-medium">{c.asa || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block">Pulpal Diagnosis</span>
+                            <p className="font-medium">{c.pulpalDiagnosis || "—"}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block">Periapical Diagnosis</span>
+                            <p className="font-medium">{c.periapicalDiagnosis || "—"}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-5">
+                          <span className="text-gray-400 text-sm block mb-1">Periodontal Status</span>
+                          <p className="font-medium">{c.periodontalStatus || "—"}</p>
+                        </div>
+
+                        {(c.remainingToothStructure || c.remainingPercent !== undefined) && (
+                          <div className="mt-5">
+                            <span className="text-gray-400 text-sm block mb-1">Remaining Tooth Structure</span>
+                            <p className="font-medium">
+                              {c.remainingToothStructure || `${c.remainingPercent}% remaining`}
+                            </p>
+                          </div>
+                        )}
+
+                        {c.affectingFactors && c.affectingFactors.length > 0 && (
+                          <div className="mt-5">
+                            <span className="text-gray-400 text-sm block mb-2">Key Affecting Factors</span>
+                            <div className="flex flex-wrap gap-2">
+                              {c.affectingFactors.slice(0, 6).map((factor, i) => (
+                                <span key={i} className="text-xs bg-gray-800 px-3 py-1 rounded-full text-gray-300">
+                                  {factor}
+                                </span>
+                              ))}
+                              {c.affectingFactors.length > 6 && (
+                                <span className="text-xs bg-gray-800 px-3 py-1 rounded-full text-gray-400">
+                                  +{c.affectingFactors.length - 6} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
-                    </div>
 
-                    <div className="mt-6 text-xs text-gray-500 border-t border-gray-700 pt-4">
-                      Added on: {c.createdAt ? 
-                        new Date(c.createdAt.seconds * 1000).toLocaleDateString('en-GB', {
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric'
-                        }) : "Unknown date"}
-                    </div>
+                      <div className="flex flex-col items-end justify-between gap-6">
+                        <div className="text-right">
+                          <div className={`text-5xl font-bold ${c.isPractical ? 'text-[#10b981]' : 'text-red-400'}`}>
+                            {c.survivalEstimate || "—"}%
+                          </div>
+                          <div className={`text-sm mt-1 ${c.isPractical ? 'text-[#10b981]' : 'text-red-400'}`}>
+                            {c.isPractical ? '✅ Practical to Retain' : '⚠️ Impractical to Retain'}
+                          </div>
+                        </div>
 
-                    <div className="mt-8 flex gap-4">
-                      {editingId === c.id ? (
-                        <>
-                          <button onClick={() => saveEdit(c.id)} className="flex-1 bg-[#10b981] hover:bg-[#0ea46c] py-3 rounded-2xl font-semibold">Save Changes</button>
-                          <button onClick={() => { setEditingId(null); setEditForm({}); }} className="flex-1 bg-gray-700 hover:bg-gray-600 py-3 rounded-2xl font-semibold">Cancel</button>
-                          <button 
-                            onClick={() => deleteCase(c.id)} 
-                            disabled={deletingId === c.id}
-                            className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-2xl font-semibold text-white disabled:opacity-50"
-                          >
-                            {deletingId === c.id ? "Deleting..." : "Delete Case"}
-                          </button>
-                        </>
-                      ) : (
-                        <button onClick={() => startEditing(c)} className="flex-1 bg-[#0f6cbd] hover:bg-[#0a5a9c] py-3 rounded-2xl font-semibold">Edit Case</button>
-                      )}
+                        <div>
+                          <p className="text-gray-400 text-sm mb-1">Current Status</p>
+                          <p className="font-medium text-lg">{c.treatmentStatus}</p>
+                        </div>
+
+                        <button
+                          onClick={() => openCaseDetail(c.id)}
+                          className="bg-[#0f6cbd] hover:bg-[#0a5a9c] px-10 py-4 rounded-2xl font-semibold text-lg w-full lg:w-auto"
+                        >
+                          View & Edit Full Details
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ))}
-
         </div>
-
-        <footer className="text-center py-8 text-sm text-gray-500">
-          © 2026 Endoprognosis Project. All rights reserved.
-        </footer>
       </div>
     </ProtectedRoute>
   );
