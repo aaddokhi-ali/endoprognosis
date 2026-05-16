@@ -105,6 +105,16 @@ export default function Navigation() {
               </Link>
             )}
 
+            {/* Profit Tracker - Only for logged-in users */}
+            {!effectiveIsGuest && user && (
+              <Link 
+                href="/profit-tracker" 
+                className={`hover:text-[#10b981] transition-colors ${pathname === "/profit-tracker" ? "text-[#10b981] font-semibold" : ""}`}
+              >
+                💰 Profit Tracker
+              </Link>
+            )}
+
             <Link 
               href={effectiveIsGuest ? "/guest" : "/home"} 
               className={`hover:text-[#10b981] transition-colors ${(pathname === "/home" || pathname === "/guest") ? "text-[#10b981] font-semibold" : ""}`}
