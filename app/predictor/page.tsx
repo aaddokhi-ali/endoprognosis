@@ -380,7 +380,7 @@ export default function EndodonticPrognosisPredictor() {
 
       <div className="min-h-screen bg-[#0a1428] text-white">
         {/* Modern Hero Section */}
-        <div className="relative h-[420px] bg-cover bg-center" style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')" }}>
+        <div className="relative h-[380px] sm:h-[420px] bg-cover bg-center" style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')" }}>
           <div className="absolute inset-0 bg-black/75"></div>
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
             <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-[#0f6cbd] via-[#10b981] to-[#0f6cbd] bg-clip-text text-transparent">
@@ -390,7 +390,7 @@ export default function EndodonticPrognosisPredictor() {
           </div>
         </div>
 
-        <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
           <div className="flex justify-between mb-10">
             {[1, 2, 3].map((s) => (
               <div key={s} className={`flex-1 h-2 rounded-full mx-1 transition-all ${step >= s ? 'bg-[#10b981]' : 'bg-gray-700'}`} />
@@ -485,20 +485,28 @@ export default function EndodonticPrognosisPredictor() {
                   </div>
                 </div>
 
-                <div className="border border-gray-600 rounded-2xl p-8 bg-[#0f172a]">
-                  <svg width="440" height="340" viewBox="0 0 440 340" xmlns="http://www.w3.org/2000/svg" className="mx-auto block">
-                    <rect x="80" y="80" width="280" height="190" rx="25" ry="25" fill="#f1f1f1" stroke="#333" strokeWidth="25"/>
-                    <rect id="mesial" x="100" y="105" width="65" height="140" rx="12" fill={parts.mesial ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('mesial')} style={{cursor:'pointer'}}/>
-                    <rect id="distal" x="275" y="105" width="65" height="140" rx="12" fill={parts.distal ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('distal')} style={{cursor:'pointer'}}/>
-                    <rect id="buccal" x="125" y="85" width="190" height="55" rx="12" fill={parts.buccal ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('buccal')} style={{cursor:'pointer'}}/>
-                    <rect id="lingual" x="125" y="210" width="190" height="55" rx="12" fill={parts.lingual ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('lingual')} style={{cursor:'pointer'}}/>
-                    <circle id="occlusal" cx="220" cy="175" r="52" fill={parts.occlusal ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="14" onClick={() => togglePart('occlusal')} style={{cursor:'pointer'}}/>
-                    <rect id="ferruleMesial" x="48" y="68" width="14" height="214" rx="7" fill="transparent" stroke={ferruleWalls.mesial ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.mesial ? "none" : "8,5"} onClick={() => toggleFerrule('mesial')} style={{cursor:'pointer'}}/>
-                    <rect id="ferruleDistal" x="378" y="68" width="14" height="214" rx="7" fill="transparent" stroke={ferruleWalls.distal ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.distal ? "none" : "8,5"} onClick={() => toggleFerrule('distal')} style={{cursor:'pointer'}}/>
-                    <rect id="ferruleBuccal" x="68" y="48" width="304" height="14" rx="7" fill="transparent" stroke={ferruleWalls.buccal ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.buccal ? "none" : "8,5"} onClick={() => toggleFerrule('buccal')} style={{cursor:'pointer'}}/>
-                    <rect id="ferruleLingual" x="68" y="278" width="304" height="14" rx="7" fill="transparent" stroke={ferruleWalls.lingual ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.lingual ? "none" : "8,5"} onClick={() => toggleFerrule('lingual')} style={{cursor:'pointer'}}/>
-                  </svg>
-                  <p className="mt-6 text-sm text-gray-400 text-center">
+                <div className="border border-gray-600 rounded-2xl p-6 sm:p-8 bg-[#0f172a]">
+                  <div className="flex justify-center">
+                    <svg 
+                      width="440" 
+                      height="340" 
+                      viewBox="0 0 440 340" 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      className="w-full max-w-[440px] h-auto mx-auto touch-manipulation"
+                    >
+                      <rect x="80" y="80" width="280" height="190" rx="25" ry="25" fill="#f1f1f1" stroke="#333" strokeWidth="25"/>
+                      <rect id="mesial" x="100" y="105" width="65" height="140" rx="12" fill={parts.mesial ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('mesial')} style={{cursor:'pointer'}}/>
+                      <rect id="distal" x="275" y="105" width="65" height="140" rx="12" fill={parts.distal ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('distal')} style={{cursor:'pointer'}}/>
+                      <rect id="buccal" x="125" y="85" width="190" height="55" rx="12" fill={parts.buccal ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('buccal')} style={{cursor:'pointer'}}/>
+                      <rect id="lingual" x="125" y="210" width="190" height="55" rx="12" fill={parts.lingual ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="10" onClick={() => togglePart('lingual')} style={{cursor:'pointer'}}/>
+                      <circle id="occlusal" cx="220" cy="175" r="52" fill={parts.occlusal ? "#4ade80" : "#e5e5e5"} stroke="#333" strokeWidth="14" onClick={() => togglePart('occlusal')} style={{cursor:'pointer'}}/>
+                      <rect id="ferruleMesial" x="48" y="68" width="14" height="214" rx="7" fill="transparent" stroke={ferruleWalls.mesial ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.mesial ? "none" : "8,5"} onClick={() => toggleFerrule('mesial')} style={{cursor:'pointer'}}/>
+                      <rect id="ferruleDistal" x="378" y="68" width="14" height="214" rx="7" fill="transparent" stroke={ferruleWalls.distal ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.distal ? "none" : "8,5"} onClick={() => toggleFerrule('distal')} style={{cursor:'pointer'}}/>
+                      <rect id="ferruleBuccal" x="68" y="48" width="304" height="14" rx="7" fill="transparent" stroke={ferruleWalls.buccal ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.buccal ? "none" : "8,5"} onClick={() => toggleFerrule('buccal')} style={{cursor:'pointer'}}/>
+                      <rect id="ferruleLingual" x="68" y="278" width="304" height="14" rx="7" fill="transparent" stroke={ferruleWalls.lingual ? "#ef4444" : "#666"} strokeWidth="10" strokeDasharray={ferruleWalls.lingual ? "none" : "8,5"} onClick={() => toggleFerrule('lingual')} style={{cursor:'pointer'}}/>
+                    </svg>
+                  </div>
+                  <p className="mt-8 text-sm text-gray-400 text-center px-4">
                     Click on the tooth walls and occlusal surface to indicate remaining coronal structure.<br/>
                     <strong>Click the outer lines around the tooth to indicate missing ferrule effect.</strong>
                   </p>

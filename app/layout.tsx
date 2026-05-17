@@ -28,10 +28,14 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  minimumScale: 1,
   maximumScale: 1.0,
-  userScalable: true,        // Allow slight zoom if needed
+  userScalable: true,
   viewportFit: "cover",
-  themeColor: "#0a1428",     // Matches your dark background
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0a1428" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a1428" },
+  ],
 };
 // ============================================================
 
@@ -47,7 +51,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body 
-        className="bg-[#0a1428] text-white antialiased"
+        className="bg-[#0a1428] text-white antialiased overflow-x-hidden"
         suppressHydrationWarning
       >
         <AuthProvider>
