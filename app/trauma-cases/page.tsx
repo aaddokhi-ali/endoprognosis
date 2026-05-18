@@ -57,16 +57,16 @@ export default function TraumaCases() {
     <>
       <Navigation />
 
-      <div className="min-h-screen bg-[#0a1428] text-white py-12">
-        <div className="max-w-7xl mx-auto px-6">
+      <div className="min-h-screen bg-[#0a1428] text-white py-8 sm:py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div>
-              <h1 className="text-4xl font-serif">Trauma Cases</h1>
+              <h1 className="text-3xl sm:text-4xl font-serif">Trauma Cases</h1>
               <p className="text-gray-400 mt-1">Total Cases: {savedCases.length}</p>
             </div>
             <button 
               onClick={handleNewCase}
-              className="bg-[#10b981] hover:bg-emerald-500 text-black px-8 py-4 rounded-2xl font-semibold flex items-center gap-3 transition-all"
+              className="bg-[#10b981] hover:bg-emerald-500 text-black px-8 py-4 rounded-2xl font-semibold flex items-center gap-3 transition-all w-full sm:w-auto justify-center"
             >
               + New Trauma Case
             </button>
@@ -83,74 +83,77 @@ export default function TraumaCases() {
             />
           </div>
 
+          {/* Table Container with Horizontal Scroll on Mobile */}
           <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden">
-            {/* Table Header */}
-            <div className="grid grid-cols-12 bg-white/10 px-8 py-5 text-sm font-medium border-b border-white/10">
-              <div className="col-span-2">Date</div>
-              <div className="col-span-3">Patient Name</div>
-              <div className="col-span-1">Tooth</div>
-              <div className="col-span-2">Case Type</div>
-              <div className="col-span-2">Phone Number</div>
-              <div className="col-span-2 text-center">Actions</div>
-            </div>
-
-            {/* Cases List */}
-            {filteredCases.length > 0 ? (
-              filteredCases.map((caseItem: any) => (
-                <div key={caseItem.id} className="grid grid-cols-12 px-8 py-6 border-b border-white/10 hover:bg-white/5 transition-all">
-                  <div className="col-span-2 text-gray-400">{caseItem.date}</div>
-                  <div className="col-span-3 font-medium">{caseItem.patientInfo.patientName}</div>
-                  <div className="col-span-1 font-mono text-blue-400">{caseItem.patientInfo.tooth}</div>
-                  <div className="col-span-2">{caseItem.type}</div>
-                  <div className="col-span-2 font-mono text-gray-400">{caseItem.patientInfo.phoneNumber}</div>
-                  <div className="col-span-2 flex justify-center gap-4">
-                    <button 
-                      onClick={() => openCaseModal(caseItem)}
-                      className="text-blue-400 hover:text-blue-300 font-medium"
-                    >
-                      View / Edit
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(caseItem.id)}
-                      className="text-red-400 hover:text-red-500"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-20 text-gray-500">
-                No trauma cases found.
-                {searchTerm && <p className="mt-2">Try a different search term.</p>}
+            <div className="overflow-x-auto">
+              {/* Table Header */}
+              <div className="grid grid-cols-12 min-w-[850px] bg-white/10 px-6 sm:px-8 py-5 text-sm font-medium border-b border-white/10">
+                <div className="col-span-2">Date</div>
+                <div className="col-span-3">Patient Name</div>
+                <div className="col-span-1">Tooth</div>
+                <div className="col-span-2">Case Type</div>
+                <div className="col-span-2">Phone Number</div>
+                <div className="col-span-2 text-center">Actions</div>
               </div>
-            )}
+
+              {/* Cases List */}
+              {filteredCases.length > 0 ? (
+                filteredCases.map((caseItem: any) => (
+                  <div key={caseItem.id} className="grid grid-cols-12 min-w-[850px] px-6 sm:px-8 py-6 border-b border-white/10 hover:bg-white/5 transition-all">
+                    <div className="col-span-2 text-gray-400">{caseItem.date}</div>
+                    <div className="col-span-3 font-medium">{caseItem.patientInfo.patientName}</div>
+                    <div className="col-span-1 font-mono text-blue-400">{caseItem.patientInfo.tooth}</div>
+                    <div className="col-span-2">{caseItem.type}</div>
+                    <div className="col-span-2 font-mono text-gray-400">{caseItem.patientInfo.phoneNumber}</div>
+                    <div className="col-span-2 flex justify-center gap-4">
+                      <button 
+                        onClick={() => openCaseModal(caseItem)}
+                        className="text-blue-400 hover:text-blue-300 font-medium whitespace-nowrap"
+                      >
+                        View / Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(caseItem.id)}
+                        className="text-red-400 hover:text-red-500 whitespace-nowrap"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-20 text-gray-500 px-6">
+                  No trauma cases found.
+                  {searchTerm && <p className="mt-2">Try a different search term.</p>}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Case Detail / Edit Modal */}
       {showModal && selectedCase && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
-          <div className="bg-[#0f172a] border border-white/10 rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-auto">
-            <div className="p-8">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 sm:p-6">
+          <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <div className="p-6 sm:p-8">
               <div className="flex justify-between items-start mb-8">
                 <div>
-                  <h2 className="text-3xl font-semibold">{selectedCase.type}</h2>
+                  <h2 className="text-2xl sm:text-3xl font-semibold">{selectedCase.type}</h2>
                   <p className="text-gray-400 mt-1">
                     {selectedCase.patientInfo.patientName} — Tooth {selectedCase.patientInfo.tooth}
                   </p>
                 </div>
                 <button 
                   onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-white text-2xl"
+                  className="text-gray-400 hover:text-white text-3xl leading-none"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Patient Info */}
-              <div className="grid grid-cols-2 gap-6 mb-8 bg-white/5 p-6 rounded-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8 bg-white/5 p-6 rounded-2xl">
                 <div>
                   <p className="text-gray-400 text-sm">Phone Number</p>
                   <p className="font-mono text-lg">{selectedCase.patientInfo.phoneNumber}</p>
@@ -186,13 +189,13 @@ export default function TraumaCases() {
                 <div className="mb-8">
                   <h3 className="text-lg font-semibold mb-4">Saved Protocol</h3>
                   <div 
-                    className="prose prose-invert max-w-none bg-white/5 border border-white/10 rounded-2xl p-8 overflow-auto max-h-[400px]"
+                    className="prose prose-invert max-w-none bg-white/5 border border-white/10 rounded-2xl p-6 sm:p-8 overflow-auto max-h-[400px]"
                     dangerouslySetInnerHTML={{ __html: selectedCase.resultHTML }} 
                   />
                 </div>
               )}
 
-              <div className="flex gap-4 pt-6 border-t border-white/10">
+              <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-white/10">
                 <button 
                   onClick={saveNotes}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-4 rounded-2xl font-semibold"

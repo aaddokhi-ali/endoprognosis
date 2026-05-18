@@ -195,11 +195,11 @@ export default function MyCases() {
       <Navigation />
 
       <div className="min-h-screen bg-[#0a1428] text-white">
-        <div className="max-w-6xl mx-auto px-6 py-12">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
             <div>
-              <h1 className="text-4xl font-bold">My Saved Cases 📋</h1>
+              <h1 className="text-3xl sm:text-4xl font-bold">My Saved Cases 📋</h1>
               <p className="text-gray-400 mt-1">{cases.length} cases total</p>
             </div>
 
@@ -216,12 +216,12 @@ export default function MyCases() {
           </div>
 
           {/* Tabs */}
-          <div className="flex flex-wrap gap-2 mb-10 border-b border-gray-700 pb-4">
+          <div className="flex flex-wrap gap-2 mb-10 border-b border-gray-700 pb-4 overflow-x-auto pb-6">
             {["All", "Crack Cases", "No Treatment", "In-Progress", "Done", "Postpone"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
-                className={`px-6 py-3 rounded-2xl text-sm font-medium transition-all ${
+                className={`px-6 py-3 rounded-2xl text-sm font-medium transition-all whitespace-nowrap ${
                   activeTab === tab 
                     ? "bg-[#0f6cbd] text-white" 
                     : "bg-[#1e2937] hover:bg-gray-700 text-gray-300"
@@ -247,7 +247,7 @@ export default function MyCases() {
               <h2 className="text-3xl font-semibold mb-8">🦷 Crack Tooth Cases ({filteredCases.length})</h2>
               <div className="grid gap-6">
                 {filteredCases.map((c) => (
-                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-8 flex justify-between items-center">
+                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                     <div>
                       <h3 className="text-2xl font-bold">{c.caseName}</h3>
                       {c.phoneNumber && (
@@ -259,7 +259,7 @@ export default function MyCases() {
                     </div>
                     <button
                       onClick={() => openCaseDetail(c.id)}
-                      className="bg-[#0f6cbd] hover:bg-[#0a5a9c] px-8 py-4 rounded-2xl font-semibold"
+                      className="bg-[#0f6cbd] hover:bg-[#0a5a9c] px-8 py-4 rounded-2xl font-semibold w-full sm:w-auto"
                     >
                       View Details
                     </button>
@@ -278,7 +278,7 @@ export default function MyCases() {
 
               <div className="grid gap-6">
                 {caseList.map((c) => (
-                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-8 hover:border-[#0f6cbd] border border-transparent transition-all">
+                  <div key={c.id} className="bg-[#1e2937] rounded-3xl p-6 sm:p-8 hover:border-[#0f6cbd] border border-transparent transition-all">
                     <div className="flex flex-col lg:flex-row justify-between gap-8">
                       <div className="flex-1">
                         <h3 className="text-2xl font-bold">{c.caseName}</h3>
@@ -294,7 +294,7 @@ export default function MyCases() {
                           Tooth #{c.toothNumber} • {c.toothType}
                         </p>
 
-                        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
                             <span className="text-gray-400 block">Gender / Age</span>
                             <p className="font-medium">{c.gender || "—"} • {c.ageGroup || "—"}</p>
@@ -346,8 +346,8 @@ export default function MyCases() {
                         )}
                       </div>
 
-                      <div className="flex flex-col items-end justify-between gap-6">
-                        <div className="text-right">
+                      <div className="flex flex-col items-start sm:items-end justify-between gap-6">
+                        <div className="text-left sm:text-right">
                           <div className={`text-5xl font-bold ${c.isPractical ? 'text-[#10b981]' : 'text-red-400'}`}>
                             {c.survivalEstimate || "—"}%
                           </div>
@@ -363,7 +363,7 @@ export default function MyCases() {
 
                         <button
                           onClick={() => openCaseDetail(c.id)}
-                          className="bg-[#0f6cbd] hover:bg-[#0a5a9c] px-10 py-4 rounded-2xl font-semibold text-lg w-full lg:w-auto"
+                          className="bg-[#0f6cbd] hover:bg-[#0a5a9c] px-8 sm:px-10 py-4 rounded-2xl font-semibold text-lg w-full sm:w-auto"
                         >
                           View & Edit Full Details
                         </button>

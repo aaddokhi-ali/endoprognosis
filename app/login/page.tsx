@@ -5,8 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "next/navigation";
-import { signOut } from "firebase/auth";   // ← Added
-import { auth } from "../firebaseConfig"; // ← Added
+import { signOut } from "firebase/auth";
+import { auth } from "../firebaseConfig";
 import LoadingScreen from "../components/LoadingScreen";
 
 export default function LoginPage() {
@@ -62,7 +62,7 @@ export default function LoginPage() {
 
     try {
       // Force clear any existing Firebase session
-      await signOut(auth).catch(() => {}); // Ignore errors if already signed out
+      await signOut(auth).catch(() => {});
 
       // Clear any old user data
       localStorage.removeItem("isGuest");
@@ -111,27 +111,27 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/60 to-black/80" />
       </div>
 
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         <div className="w-full max-w-md">
-          <div className="flex justify-center mb-10">
+          <div className="flex justify-center mb-8 sm:mb-10">
             <Image
               src="https://iili.io/B6RcxlS.png"
               alt="Endoprognosis Logo"
               width={240}
               height={80}
-              className="h-16 w-auto drop-shadow-xl"
+              className="h-14 sm:h-16 w-auto drop-shadow-xl"
               priority
             />
           </div>
 
-          <div className="text-center mb-10">
-            <h1 className="text-5xl font-serif tracking-wider text-white mb-3">
+          <div className="text-center mb-8 sm:mb-10">
+            <h1 className="text-4xl sm:text-5xl font-serif tracking-wider text-white mb-3">
               Welcome Back
             </h1>
-            <p className="text-lg text-gray-300">Sign in to access your tools</p>
+            <p className="text-base sm:text-lg text-gray-300">Sign in to access your tools</p>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-10 shadow-2xl">
+          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-3xl p-6 sm:p-10 shadow-2xl">
             {error && (
               <div className="bg-red-500/10 border border-red-500/50 text-red-300 p-4 rounded-2xl mb-6 text-sm">
                 {error}
@@ -175,7 +175,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#10b981] hover:bg-[#0ea76e] text-black font-semibold py-4 rounded-2xl text-lg transition disabled:opacity-70"
+                className="w-full bg-[#10b981] hover:bg-[#0ea76e] disabled:bg-gray-600 text-black font-semibold py-4 rounded-2xl text-lg transition disabled:opacity-70"
               >
                 Sign In
               </button>
@@ -209,7 +209,7 @@ export default function LoginPage() {
 
       {/* Bottom Navigation */}
       <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
-        <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap justify-center gap-x-6 sm:gap-x-8 gap-y-2">
           <Link href="/about" className="hover:text-white transition">About</Link>
           <Link href="/references" className="hover:text-white transition">References</Link>
           <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>

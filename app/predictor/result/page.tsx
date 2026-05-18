@@ -332,46 +332,46 @@ export default function PredictorResult() {
   return (
     <ProtectedRoute>
       <Navigation />
-      <div className="min-h-screen bg-[#0a1428] text-white pb-20">
+      <div className="min-h-screen bg-[#0a1428] text-white pb-12 sm:pb-20">
         {/* Hero Section */}
         <div
-          className="relative h-[420px] bg-cover bg-center"
+          className="relative h-[380px] sm:h-[420px] bg-cover bg-center"
           style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')" }}
         >
           <div className="absolute inset-0 bg-black/75"></div>
-          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
-            <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-[#0f6cbd] via-[#10b981] to-[#0f6cbd] bg-clip-text text-transparent">
+          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4 sm:px-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-[#0f6cbd] via-[#10b981] to-[#0f6cbd] bg-clip-text text-transparent">
               Prediction Result
             </h1>
-            <p className="text-2xl text-gray-200">Tooth #{result.toothNumber}</p>
+            <p className="text-xl sm:text-2xl text-gray-200">Tooth #{result.toothNumber}</p>
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto px-6 py-12">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           {/* Single Back Button */}
-          <div className="flex justify-start mb-10">
+          <div className="flex justify-start mb-8 sm:mb-10">
             <button
               onClick={goBackToPredictor}
-              className="bg-gray-700 hover:bg-gray-600 px-8 py-4 rounded-2xl text-lg font-semibold flex items-center gap-2 transition"
+              className="bg-gray-700 hover:bg-gray-600 px-6 sm:px-8 py-4 rounded-2xl text-lg font-semibold flex items-center gap-2 transition"
             >
               ← Back to Predictor
             </button>
           </div>
 
           {/* Main Result Container */}
-          <div className="bg-[#1e2937] rounded-3xl p-10 shadow-2xl border border-gray-700">
-            <h2 className="text-4xl font-bold text-center mb-10 text-[#0f6cbd]">📋 Result Summary</h2>
+          <div className="bg-[#1e2937] rounded-3xl p-6 sm:p-10 shadow-2xl border border-gray-700">
+            <h2 className="text-3xl sm:text-4xl font-bold text-center mb-8 sm:mb-10 text-[#0f6cbd]">📋 Result Summary</h2>
 
             {/* Enhanced Survival Statement */}
-            <div className="text-center mb-12">
-              <p className="text-xl leading-relaxed text-gray-200 mb-6">
+            <div className="text-center mb-10 sm:mb-12">
+              <p className="text-lg sm:text-xl leading-relaxed text-gray-200 mb-6 px-2">
                 Based on the survival calculation, the probability of retaining this tooth{" "}
                 <strong>#{result.toothNumber}</strong> over the next 4 years is approximately
               </p>
-              <div className="text-6xl font-bold text-[#60a5fa] mb-3">
+              <div className="text-5xl sm:text-6xl font-bold text-[#60a5fa] mb-3">
                 {survival}%
               </div>
-              <p className="text-sm text-gray-400 max-w-2xl mx-auto">
+              <p className="text-sm text-gray-400 max-w-2xl mx-auto px-4">
                 This estimate depends on the quality of the final restoration, the patient's compliance
                 with oral hygiene measures, absence of parafunctional habits (such as bruxism), and
                 other clinical factors.
@@ -379,21 +379,21 @@ export default function PredictorResult() {
             </div>
 
             {/* Diagnosis */}
-            <div className="text-center mb-12">
-              <p className="text-2xl font-medium">
+            <div className="text-center mb-10 sm:mb-12 px-4">
+              <p className="text-xl sm:text-2xl font-medium">
                 <strong>Diagnosis:</strong> {result.pulpalDiagnosis} with {result.periapicalDiagnosis}
               </p>
             </div>
 
             {/* EP Points */}
-            <div className="bg-[#0f172a] rounded-3xl p-10 mb-12 border border-gray-600">
+            <div className="bg-[#0f172a] rounded-3xl p-6 sm:p-10 mb-10 sm:mb-12 border border-gray-600">
               <div className="text-center mb-8">
                 <p className="text-lg text-gray-400 mb-1">EP (Endoprognosis) Points</p>
-                <p className="text-6xl font-bold text-[#3b82f6]">{result.totalDPI || 0}</p>
+                <p className="text-5xl sm:text-6xl font-bold text-[#3b82f6]">{result.totalDPI || 0}</p>
               </div>
 
               <div className="text-center">
-                <p className="text-3xl font-bold">
+                <p className="text-2xl sm:text-3xl font-bold">
                   4-year survival estimate:{" "}
                   <span className="text-[#60a5fa]">{survival}%</span>
                 </p>
@@ -406,7 +406,7 @@ export default function PredictorResult() {
                   </p>
                   <ul className="space-y-3 max-w-2xl mx-auto">
                     {result.affectingFactors.map((factor: string, index: number) => (
-                      <li key={index} className="flex items-start gap-3 text-gray-300">
+                      <li key={index} className="flex items-start gap-3 text-gray-300 px-2">
                         <span className="text-[#ef4444] mt-1.5">•</span>
                         <span>{factor}</span>
                       </li>
@@ -418,7 +418,7 @@ export default function PredictorResult() {
 
             {/* Practical / Impractical */}
             <div
-              className={`text-center py-16 rounded-3xl text-5xl font-bold mb-12 border-4 transition-all ${
+              className={`text-center py-12 sm:py-16 rounded-3xl text-4xl sm:text-5xl font-bold mb-10 sm:mb-12 border-4 transition-all ${
                 isRestorable
                   ? "border-[#10b981] bg-green-950/40 text-[#10b981]"
                   : "border-[#ef4444] bg-red-950/40 text-[#ef4444]"
@@ -429,24 +429,24 @@ export default function PredictorResult() {
 
             {/* Treatment Recommendation */}
             {result.treatmentRec && (
-              <div className="bg-[#0f172a] p-8 rounded-2xl mb-12 text-center border border-gray-600">
-                <p className="text-xl font-semibold mb-3">Treatment Recommendation</p>
-                <p className="text-2xl">{result.treatmentRec}</p>
+              <div className="bg-[#0f172a] p-6 sm:p-8 rounded-2xl mb-10 sm:mb-12 text-center border border-gray-600">
+                <p className="text-lg sm:text-xl font-semibold mb-3">Treatment Recommendation</p>
+                <p className="text-xl sm:text-2xl">{result.treatmentRec}</p>
               </div>
             )}
 
             {/* Action Buttons - Save + Export */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-12">
+            <div className="flex flex-col sm:flex-row gap-4 mb-10 sm:mb-12">
               <button
                 onClick={() => setShowSaveModal(true)}
-                className="flex-1 bg-[#10b981] hover:bg-[#0ea46c] text-[#0f172a] font-bold py-6 rounded-2xl text-xl transition-all active:scale-[0.98]"
+                className="flex-1 bg-[#10b981] hover:bg-[#0ea46c] text-[#0f172a] font-bold py-5 sm:py-6 rounded-2xl text-lg sm:text-xl transition-all active:scale-[0.98]"
               >
                 💾 Save This Case
               </button>
               <button
                 onClick={exportAsPDF}
                 disabled={isGeneratingPDF}
-                className="flex-1 bg-white/10 hover:bg-white/20 font-bold py-6 rounded-2xl text-xl transition-all active:scale-[0.98] disabled:opacity-50"
+                className="flex-1 bg-white/10 hover:bg-white/20 font-bold py-5 sm:py-6 rounded-2xl text-lg sm:text-xl transition-all active:scale-[0.98] disabled:opacity-50"
               >
                 {isGeneratingPDF ? "Generating PDF..." : "📄 Export as PDF"}
               </button>
@@ -456,13 +456,13 @@ export default function PredictorResult() {
             {isRestorable && (
               <button
                 onClick={goToRestorative}
-                className="w-full bg-[#10b981] hover:bg-[#0ea46c] text-[#0f172a] font-bold py-7 rounded-2xl text-2xl transition-all active:scale-[0.98] mb-12"
+                className="w-full bg-[#10b981] hover:bg-[#0ea46c] text-[#0f172a] font-bold py-6 sm:py-7 rounded-2xl text-xl sm:text-2xl transition-all active:scale-[0.98] mb-10 sm:mb-12"
               >
                 📋 View Suggested Restorative Treatment
               </button>
             )}
 
-            <p className="text-center text-red-400 text-sm leading-relaxed">
+            <p className="text-center text-red-400 text-sm leading-relaxed px-4">
               ⚠️ This result is for clinical decision support only.<br />
               Always apply your professional judgment.
             </p>
@@ -471,8 +471,8 @@ export default function PredictorResult() {
 
         {/* Save Modal */}
         {showSaveModal && (
-          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-6">
-            <div className="bg-[#1e2937] rounded-3xl p-8 max-w-md w-full border border-gray-700">
+          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 sm:p-6">
+            <div className="bg-[#1e2937] rounded-3xl p-6 sm:p-8 max-w-md w-full border border-gray-700">
               <h3 className="text-2xl font-bold mb-6 text-[#0f6cbd]">Save Case</h3>
 
               <div className="space-y-5">
@@ -513,7 +513,7 @@ export default function PredictorResult() {
                 </div>
               </div>
 
-              <div className="flex gap-4 mt-8">
+              <div className="flex flex-col sm:flex-row gap-4 mt-8">
                 <button
                   onClick={() => setShowSaveModal(false)}
                   className="flex-1 py-4 bg-gray-700 hover:bg-gray-600 rounded-2xl font-semibold"
@@ -534,7 +534,7 @@ export default function PredictorResult() {
 
         {/* Footer */}
         <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
-          <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap justify-center gap-x-6 sm:gap-x-8 gap-y-2">
             <Link href="/about" className="hover:text-white transition">About</Link>
             <Link href="/references" className="hover:text-white transition">References</Link>
             <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>

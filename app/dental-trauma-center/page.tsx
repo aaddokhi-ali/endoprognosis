@@ -71,26 +71,26 @@ export default function DentalTraumaCenter() {
       <div className="min-h-screen bg-[#0a1428] text-white">
         {/* Hero Header */}
         <div 
-          className="relative h-[460px] bg-cover bg-center"
+          className="relative h-[380px] sm:h-[460px] bg-cover bg-center"
           style={{ backgroundImage: "url('https://iili.io/BLMUZYv.jpg')" }}
         >
           <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/80 to-[#0a1428]" />
           
-          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
-            <h1 className="text-6xl md:text-7xl font-serif tracking-wider font-bold mb-4 bg-gradient-to-r from-blue-200 via-white to-blue-200 bg-clip-text text-transparent">
+          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4 sm:px-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-serif tracking-wider font-bold mb-4 bg-gradient-to-r from-blue-200 via-white to-blue-200 bg-clip-text text-transparent">
               Dental Trauma Center
             </h1>
-            <p className="text-2xl text-blue-200 max-w-2xl mx-auto mt-2">
+            <p className="text-xl sm:text-2xl text-blue-200 max-w-2xl mx-auto mt-2">
               Evidence-Based Guides for Traumatic Dental Injuries
             </p>
-            <p className="mt-3 text-blue-400 text-lg">
+            <p className="mt-3 text-blue-400 text-base sm:text-lg">
               IADT 2020 • AAE Guidelines
             </p>
           </div>
         </div>
 
         {/* Patient Identification */}
-        <div className="max-w-7xl mx-auto px-6 py-12 border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 border-b border-white/10">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-8">
             <h2 className="text-3xl font-semibold">Patient Identification</h2>
             <p className="text-gray-400 mt-2 md:mt-0">
@@ -98,7 +98,7 @@ export default function DentalTraumaCenter() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             {/* Patient Name */}
             <div>
               <label className="block text-sm mb-2 text-gray-300">Patient Name <span className="text-red-400">*</span></label>
@@ -129,21 +129,21 @@ export default function DentalTraumaCenter() {
             </div>
 
             {/* Gender */}
-<div>
-  <label className="block text-sm mb-2 text-gray-300">Gender</label>
-  <select 
-    name="gender"
-    value={patientInfo.gender}
-    onChange={handlePatientChange}
-    className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 
-               text-white focus:outline-none focus:border-[#10b981] 
-               appearance-none transition-colors"
-  >
-    <option value="" className="bg-[#0a1428] text-white py-3">Select Gender</option>
-    <option value="Male" className="bg-[#0a1428] text-white py-3">Male</option>
-    <option value="Female" className="bg-[#0a1428] text-white py-3">Female</option>
-  </select>
-</div>
+            <div>
+              <label className="block text-sm mb-2 text-gray-300">Gender</label>
+              <select 
+                name="gender"
+                value={patientInfo.gender}
+                onChange={handlePatientChange}
+                className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-5 py-4 
+                           text-white focus:outline-none focus:border-[#10b981] 
+                           appearance-none transition-colors"
+              >
+                <option value="" className="bg-[#0a1428] text-white py-3">Select Gender</option>
+                <option value="Male" className="bg-[#0a1428] text-white py-3">Male</option>
+                <option value="Female" className="bg-[#0a1428] text-white py-3">Female</option>
+              </select>
+            </div>
 
             {/* Tooth (Full FDI) */}
             <div>
@@ -205,9 +205,9 @@ export default function DentalTraumaCenter() {
         </div>
 
         {/* Trauma Categories */}
-        <div className="max-w-7xl mx-auto px-6 py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
           <div className="flex flex-col items-center mb-12">
-            <h2 className="text-4xl font-serif text-center">Trauma Categories</h2>
+            <h2 className="text-3xl sm:text-4xl font-serif text-center">Trauma Categories</h2>
             <p className="text-gray-400 mt-3 text-center max-w-md">
               {isFormValid 
                 ? "Patient information is complete. Choose a category to begin documentation." 
@@ -215,7 +215,7 @@ export default function DentalTraumaCenter() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             {/* Avulsion */}
             <Link
               href={`/dental-trauma-center/avulsion?phone=${encodeURIComponent(patientInfo.phoneNumber)}`}
@@ -223,7 +223,7 @@ export default function DentalTraumaCenter() {
               onClick={(e) => !isFormValid && e.preventDefault()}
             >
               <div className="h-2 bg-gradient-to-r from-rose-400 to-pink-500" />
-              <div className="p-8">
+              <div className="p-6 sm:p-8">
                 <h3 className="text-2xl font-semibold mb-3">Avulsion</h3>
                 <p className="text-gray-400">Complete Tooth Displacement</p>
                 <div className="mt-8 text-rose-400 font-medium flex items-center gap-2">
@@ -239,7 +239,7 @@ export default function DentalTraumaCenter() {
               onClick={(e) => !isFormValid && e.preventDefault()}
             >
               <div className="h-2 bg-gradient-to-r from-emerald-400 to-teal-500" />
-              <div className="p-8">
+              <div className="p-6 sm:p-8">
                 <h3 className="text-2xl font-semibold mb-3">Crown Fractures</h3>
                 <p className="text-gray-400">Uncomplicated & Complicated (with pulp exposure)</p>
                 <div className="mt-8 text-emerald-400 font-medium flex items-center gap-2">
@@ -255,7 +255,7 @@ export default function DentalTraumaCenter() {
               onClick={(e) => !isFormValid && e.preventDefault()}
             >
               <div className="h-2 bg-gradient-to-r from-indigo-400 to-violet-500" />
-              <div className="p-8">
+              <div className="p-6 sm:p-8">
                 <h3 className="text-2xl font-semibold mb-3">Luxation Injuries</h3>
                 <p className="text-gray-400">Concussion • Subluxation • Extrusive • Lateral • Intrusive</p>
                 <div className="mt-8 text-indigo-400 font-medium flex items-center gap-2">
@@ -271,7 +271,7 @@ export default function DentalTraumaCenter() {
               onClick={(e) => !isFormValid && e.preventDefault()}
             >
               <div className="h-2 bg-gradient-to-r from-amber-400 to-orange-500" />
-              <div className="p-8">
+              <div className="p-6 sm:p-8">
                 <h3 className="text-2xl font-semibold mb-3">Advanced Fractures</h3>
                 <p className="text-gray-400">Crown-Root • Root • Alveolar Process</p>
                 <div className="mt-8 text-amber-400 font-medium flex items-center gap-2">

@@ -154,27 +154,27 @@ export default function RegisterPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/60 to-black/80" />
       </div>
 
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         <div className="w-full max-w-md">
-          <div className="flex justify-center mb-10">
+          <div className="flex justify-center mb-8 sm:mb-10">
             <Image
               src="https://iili.io/B6RcxlS.png"
               alt="Endoprognosis Logo"
               width={220}
               height={80}
-              className="h-16 w-auto drop-shadow-lg"
+              className="h-14 sm:h-16 w-auto drop-shadow-lg"
               priority
             />
           </div>
 
-          <div className="text-center mb-10">
-            <h1 className="text-5xl font-serif tracking-wider text-[#10b981] mb-3">
+          <div className="text-center mb-8 sm:mb-10">
+            <h1 className="text-4xl sm:text-5xl font-serif tracking-wider text-[#10b981] mb-3">
               Join Endoprognosis
             </h1>
             <p className="text-lg text-gray-300">Create your account to save cases</p>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 sm:p-10 shadow-2xl">
             {!success ? (
               <>
                 {error && (
@@ -210,30 +210,30 @@ export default function RegisterPage() {
                     />
                   </div>
 
-         <div>
-  <label className="block text-sm text-gray-300 mb-2">Profession</label>
-  <select
-    name="profession"
-    value={formData.profession}
-    onChange={handleChange}
-    className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-6 py-4 text-white 
-               focus:outline-none focus:border-[#10b981] 
-               appearance-none"
-  >
-    <option value="dental_student" className="bg-[#0a1428] text-white py-3">
-      Dental Student
-    </option>
-    <option value="dentist" className="bg-[#0a1428] text-white py-3">
-      General Dentist
-    </option>
-    <option value="endodontist" className="bg-[#0a1428] text-white py-3">
-      Endodontist
-    </option>
-    <option value="others" className="bg-[#0a1428] text-white py-3">
-      Others
-    </option>
-  </select>
-</div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Profession</label>
+                    <select
+                      name="profession"
+                      value={formData.profession}
+                      onChange={handleChange}
+                      className="w-full bg-[#0a1428] border border-white/30 rounded-2xl px-6 py-4 text-white 
+                                 focus:outline-none focus:border-[#10b981] 
+                                 appearance-none"
+                    >
+                      <option value="dental_student" className="bg-[#0a1428] text-white py-3">
+                        Dental Student
+                      </option>
+                      <option value="dentist" className="bg-[#0a1428] text-white py-3">
+                        General Dentist
+                      </option>
+                      <option value="endodontist" className="bg-[#0a1428] text-white py-3">
+                        Endodontist
+                      </option>
+                      <option value="others" className="bg-[#0a1428] text-white py-3">
+                        Others
+                      </option>
+                    </select>
+                  </div>
 
                   <div>
                     <label className="block text-sm text-gray-300 mb-2">Password</label>
@@ -352,7 +352,7 @@ export default function RegisterPage() {
       {showAgreement && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <div className="bg-[#0f1b2e] border border-white/20 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-8 overflow-y-auto max-h-[calc(90vh-80px)]">
+            <div className="p-6 sm:p-8 overflow-y-auto max-h-[calc(90vh-80px)]">
               <UserAgreementText />
             </div>
             <div className="border-t border-white/10 p-6 flex justify-end">
@@ -369,7 +369,7 @@ export default function RegisterPage() {
 
       {/* Bottom Navigation */}
       <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
-        <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap justify-center gap-x-6 sm:gap-x-8 gap-y-2">
           <Link href="/about" className="hover:text-white transition">About</Link>
           <Link href="/references" className="hover:text-white transition">References</Link>
           <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>
@@ -379,13 +379,13 @@ export default function RegisterPage() {
         </div>
 
         {/* Support Email */}
-  <div className="mt-6 text-xs">
-    Need help? Contact us at{" "}
-    <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
-      support@endoprognosis.org
-    </a>
-  </div>
-  
+        <div className="mt-6 text-xs">
+          Need help? Contact us at{" "}
+          <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
+            support@endoprognosis.org
+          </a>
+        </div>
+        
         <p className="mt-6 text-xs">© 2026 Endoprognosis • All Rights Reserved</p>
       </div>
     </div>

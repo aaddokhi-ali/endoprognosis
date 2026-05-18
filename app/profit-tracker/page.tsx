@@ -251,7 +251,7 @@ export default function ProfitTrackerPage() {
         margin: [20, 20, 20, 20] as [number, number, number, number],
         filename: `Profit_Tracker_Report_${new Date().toISOString().split('T')[0]}.pdf`,
         image: { 
-          type: "jpeg" as const,      // ← Fixed: literal type
+          type: "jpeg" as const,
           quality: 0.98 
         },
         html2canvas: { 
@@ -307,25 +307,25 @@ export default function ProfitTrackerPage() {
   return (
     <ProtectedRoute>
       <Navigation />
-      <div className="min-h-screen bg-[#0a1428] text-white py-12">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex justify-between items-center mb-8">
+      <div className="min-h-screen bg-[#0a1428] text-white py-8 sm:py-12">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-6 mb-8">
             <div>
-              <h1 className="text-4xl font-bold">💰 Profit Tracker</h1>
+              <h1 className="text-3xl sm:text-4xl font-bold">💰 Profit Tracker</h1>
               <p className="text-gray-400">Real-time earnings • Done + In-Progress cases</p>
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button 
                 onClick={exportToPDF} 
                 disabled={isExporting}
-                className="px-6 py-3 bg-[#1e2937] hover:bg-gray-700 rounded-2xl flex items-center gap-2 disabled:opacity-60"
+                className="px-6 py-3.5 bg-[#1e2937] hover:bg-gray-700 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-60 text-sm sm:text-base"
               >
                 {isExporting ? "Generating PDF..." : "📄 Export PDF Report"}
               </button>
               <button 
                 onClick={handleReset} 
-                className="px-6 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-2xl"
+                className="px-6 py-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-2xl text-sm sm:text-base"
               >
                 Reset Tracker
               </button>
@@ -335,34 +335,34 @@ export default function ProfitTrackerPage() {
           {showSetup ? (
             <ProfitSetupWizard onComplete={() => window.location.reload()} />
           ) : (
-            <div className="space-y-12">
+            <div className="space-y-10 sm:space-y-12">
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gradient-to-br from-emerald-600/10 to-emerald-500/10 border border-emerald-500/30 rounded-3xl p-8">
-                  <p className="text-emerald-400">TOTAL NET PROFIT</p>
-                  <p className="text-5xl font-bold mt-4">{totals.totalProfit.toLocaleString()} {profitSettings?.currency}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+                <div className="bg-gradient-to-br from-emerald-600/10 to-emerald-500/10 border border-emerald-500/30 rounded-3xl p-6 sm:p-8">
+                  <p className="text-emerald-400 text-sm">TOTAL NET PROFIT</p>
+                  <p className="text-4xl sm:text-5xl font-bold mt-4">{totals.totalProfit.toLocaleString()} {profitSettings?.currency}</p>
                 </div>
-                <div className="bg-gradient-to-br from-sky-600/10 to-sky-500/10 border border-sky-500/30 rounded-3xl p-8">
-                  <p className="text-sky-400">Completed Cases</p>
-                  <p className="text-5xl font-bold mt-4 text-sky-400">{totals.fullProfit.toLocaleString()} {profitSettings?.currency}</p>
+                <div className="bg-gradient-to-br from-sky-600/10 to-sky-500/10 border border-sky-500/30 rounded-3xl p-6 sm:p-8">
+                  <p className="text-sky-400 text-sm">Completed Cases</p>
+                  <p className="text-4xl sm:text-5xl font-bold mt-4 text-sky-400">{totals.fullProfit.toLocaleString()} {profitSettings?.currency}</p>
                   <p className="text-sm text-gray-400 mt-2">{totals.fullCases} cases (100%)</p>
                 </div>
-                <div className="bg-gradient-to-br from-orange-600/10 to-orange-500/10 border border-orange-500/30 rounded-3xl p-8">
-                  <p className="text-orange-400">In Progress (50%)</p>
-                  <p className="text-5xl font-bold mt-4 text-orange-400">{totals.inProgressProfit.toLocaleString()} {profitSettings?.currency}</p>
+                <div className="bg-gradient-to-br from-orange-600/10 to-orange-500/10 border border-orange-500/30 rounded-3xl p-6 sm:p-8">
+                  <p className="text-orange-400 text-sm">In Progress (50%)</p>
+                  <p className="text-4xl sm:text-5xl font-bold mt-4 text-orange-400">{totals.inProgressProfit.toLocaleString()} {profitSettings?.currency}</p>
                   <p className="text-sm text-gray-400 mt-2">{totals.inProgressCases} cases (50% fee)</p>
                 </div>
               </div>
 
               {/* Monthly Chart */}
-              <div className="bg-[#1e2937] rounded-3xl p-8">
-                <h2 className="text-2xl font-semibold mb-6">Profit Trend (Last 30 Days)</h2>
-                <div className="h-96">
+              <div className="bg-[#1e2937] rounded-3xl p-6 sm:p-8">
+                <h2 className="text-xl sm:text-2xl font-semibold mb-6">Profit Trend (Last 30 Days)</h2>
+                <div className="h-80 sm:h-96">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={monthlyProfitData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="day" stroke="#9ca3af" />
-                      <YAxis stroke="#9ca3af" />
+                      <XAxis dataKey="day" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
                       <Tooltip contentStyle={{ backgroundColor: '#1e2937', border: 'none', borderRadius: '8px' }} />
                       <Line type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', r: 4 }} />
                     </LineChart>
@@ -372,7 +372,7 @@ export default function ProfitTrackerPage() {
 
               {/* Cases List */}
               <div>
-                <h2 className="text-2xl font-semibold mb-6">All Cases Contributing to Profit</h2>
+                <h2 className="text-xl sm:text-2xl font-semibold mb-6">All Cases Contributing to Profit</h2>
                 
                 {profitCases.length === 0 ? (
                   <div className="bg-[#1e2937] rounded-3xl p-16 text-center">
@@ -385,12 +385,12 @@ export default function ProfitTrackerPage() {
                       return (
                         <div 
                           key={c.id} 
-                          className={`bg-[#1e2937] rounded-3xl p-6 flex justify-between items-center transition-all ${
+                          className={`bg-[#1e2937] rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 transition-all ${
                             isInProgress ? 'border-l-4 border-orange-500' : 'border-l-4 border-emerald-500'
                           }`}
                         >
                           <div className="flex-1">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
                               <div className="font-semibold text-lg">{c.caseName}</div>
                               {isInProgress && (
                                 <span className="px-3 py-1 text-xs font-medium bg-orange-500/20 text-orange-400 rounded-full">
@@ -403,7 +403,7 @@ export default function ProfitTrackerPage() {
                             </div>
                           </div>
 
-                          <div className="text-right">
+                          <div className="text-right sm:text-right">
                             <div className={`text-2xl font-bold ${isInProgress ? 'text-orange-400' : 'text-emerald-400'}`}>
                               +{c.profit} {profitSettings?.currency}
                               {isInProgress && <span className="text-sm ml-2">(50%)</span>}

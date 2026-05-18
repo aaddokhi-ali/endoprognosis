@@ -163,24 +163,24 @@ export default function CrackToothClassifier() {
 
       <div className="min-h-screen bg-[#0a1428] text-white">
         {/* Hero Section */}
-        <div className="relative h-[420px] bg-cover bg-center" 
+        <div className="relative h-[380px] sm:h-[420px] bg-cover bg-center" 
              style={{ backgroundImage: "url('https://iili.io/BwkLI0N.jpg')" }}>
           <div className="absolute inset-0 bg-black/75"></div>
-          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
-            <h1 className="text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-[#0f6cbd] via-[#10b981] to-[#0f6cbd] bg-clip-text text-transparent">
+          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4 sm:px-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-[#0f6cbd] via-[#10b981] to-[#0f6cbd] bg-clip-text text-transparent">
               Crack Tooth Classifier
             </h1>
-            <p className="text-2xl text-gray-200">Iowa Classification + VRF Detection</p>
+            <p className="text-xl sm:text-2xl text-gray-200">Iowa Classification + VRF Detection</p>
           </div>
         </div>
 
-        <div className="max-w-5xl mx-auto px-6 py-12">
-          <div className="bg-[#1e2937] rounded-3xl p-10 shadow-2xl">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+          <div className="bg-[#1e2937] rounded-3xl p-6 sm:p-10 shadow-2xl">
 
             {/* 1. Tooth & Case */}
-            <div className="border-l-8 border-[#3b82f6] bg-[#0f172a] p-8 rounded-2xl mb-10">
+            <div className="border-l-8 border-[#3b82f6] bg-[#0f172a] p-6 sm:p-8 rounded-2xl mb-10">
               <h3 className="text-xl font-semibold mb-6">1. Tooth & Case Identification</h3>
-              <div className="grid md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Tooth Number</label>
                   <select name="toothNumber" value={formData.toothNumber} onChange={handleChange} className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 text-white">
@@ -205,9 +205,9 @@ export default function CrackToothClassifier() {
             </div>
 
             {/* 2. Symptoms */}
-            <div className="border-l-8 border-[#eab308] bg-[#0f172a] p-8 rounded-2xl mb-10">
+            <div className="border-l-8 border-[#eab308] bg-[#0f172a] p-6 sm:p-8 rounded-2xl mb-10">
               <h3 className="text-xl font-semibold mb-6">2. Patient Symptoms / History</h3>
-              <div className="grid md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Pain on biting / chewing</label>
                   <select name="painBiting" value={formData.painBiting} onChange={handleChange} className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 text-white">
@@ -230,9 +230,9 @@ export default function CrackToothClassifier() {
             </div>
 
             {/* 3. Clinical Examination */}
-            <div className="border-l-8 border-[#ef4444] bg-[#0f172a] p-8 rounded-2xl mb-10">
+            <div className="border-l-8 border-[#ef4444] bg-[#0f172a] p-6 sm:p-8 rounded-2xl mb-10">
               <h3 className="text-xl font-semibold mb-6">3. Clinical Examination Findings</h3>
-              <div className="grid md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Bite Test</label>
                   <select name="biteTest" value={formData.biteTest} onChange={handleChange} className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 text-white">
@@ -289,44 +289,52 @@ export default function CrackToothClassifier() {
                 </div>
               </div>
 
-              {/* Tooth Diagram */}
-              <div className="mt-10 p-8 bg-[#0f172a] rounded-2xl border border-gray-700">
-                <svg width="500" height="380" viewBox="0 0 500 380" xmlns="http://www.w3.org/2000/svg" className="mx-auto block">
-                  <ellipse cx="250" cy="190" rx="135" ry="105" fill="#e2e8f0" stroke="#1e2937" strokeWidth="28"/>
-                  <circle cx="190" cy="145" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
-                  <circle cx="310" cy="145" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
-                  <circle cx="185" cy="235" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
-                  <circle cx="315" cy="235" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
-                  
-                  {[1,2,3,4,5,6].map(n => (
-                    <circle 
-                      key={n}
-                      cx={n===1 ? 165 : n===2 ? 250 : n===3 ? 335 : n===4 ? 165 : n===5 ? 250 : 335} 
-                      cy={n===1 || n===4 ? 145 : n===2 ? 125 : n===3 || n===6 ? 145 : 255} 
-                      r="24" 
-                      fill={pocketColors[`p${n}` as keyof typeof pocketColors]} 
-                      stroke="#1e2937" 
-                      strokeWidth="10" 
-                      onClick={() => openPocketModal(n)} 
-                      style={{cursor:'pointer'}} 
-                    />
-                  ))}
-                  
-                  <text x="250" y="45" fontSize="26" textAnchor="middle" fontWeight="bold" fill="#cbd5e1">Occlusal View</text>
-                  <text x="100" y="185" fontSize="18" textAnchor="middle" fill="#cbd5e1">Mesial</text>
-                  <text x="400" y="185" fontSize="18" textAnchor="middle" fill="#cbd5e1">Distal</text>
-                  <text x="250" y="90" fontSize="18" textAnchor="middle" fill="#cbd5e1">Buccal</text>
-                  <text x="250" y="290" fontSize="18" textAnchor="middle" fill="#cbd5e1">Lingual</text>
-                </svg>
+              {/* Tooth Diagram - Centered and Responsive */}
+              <div className="mt-10 p-6 sm:p-8 bg-[#0f172a] rounded-2xl border border-gray-700">
+                <div className="flex justify-center">
+                  <svg 
+                    width="500" 
+                    height="380" 
+                    viewBox="0 0 500 380" 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className="w-full max-w-[420px] h-auto mx-auto"
+                  >
+                    <ellipse cx="250" cy="190" rx="135" ry="105" fill="#e2e8f0" stroke="#1e2937" strokeWidth="28"/>
+                    <circle cx="190" cy="145" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
+                    <circle cx="310" cy="145" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
+                    <circle cx="185" cy="235" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
+                    <circle cx="315" cy="235" r="28" fill="#cbd5e1" stroke="#1e2937" strokeWidth="12"/>
+                    
+                    {[1,2,3,4,5,6].map(n => (
+                      <circle 
+                        key={n}
+                        cx={n===1 ? 165 : n===2 ? 250 : n===3 ? 335 : n===4 ? 165 : n===5 ? 250 : 335} 
+                        cy={n===1 || n===4 ? 145 : n===2 ? 125 : n===3 || n===6 ? 145 : 255} 
+                        r="24" 
+                        fill={pocketColors[`p${n}` as keyof typeof pocketColors]} 
+                        stroke="#1e2937" 
+                        strokeWidth="10" 
+                        onClick={() => openPocketModal(n)} 
+                        style={{cursor:'pointer'}} 
+                      />
+                    ))}
+                    
+                    <text x="250" y="45" fontSize="26" textAnchor="middle" fontWeight="bold" fill="#cbd5e1">Occlusal View</text>
+                    <text x="100" y="185" fontSize="18" textAnchor="middle" fill="#cbd5e1">Mesial</text>
+                    <text x="400" y="185" fontSize="18" textAnchor="middle" fill="#cbd5e1">Distal</text>
+                    <text x="250" y="90" fontSize="18" textAnchor="middle" fill="#cbd5e1">Buccal</text>
+                    <text x="250" y="290" fontSize="18" textAnchor="middle" fill="#cbd5e1">Lingual</text>
+                  </svg>
+                </div>
                 <p className="text-center mt-6 text-sm text-gray-400">Click circles to record probing depth</p>
                 <p className="text-center font-bold text-[#10b981] text-xl mt-3">Deep pockets: {deepPockets}</p>
               </div>
             </div>
 
             {/* 4. Radiographic */}
-            <div className="border-l-8 border-[#10b981] bg-[#0f172a] p-8 rounded-2xl mb-10">
+            <div className="border-l-8 border-[#10b981] bg-[#0f172a] p-6 sm:p-8 rounded-2xl mb-10">
               <h3 className="text-xl font-semibold mb-6">4. Radiographic Findings</h3>
-              <div className="grid md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Periapical Lesion</label>
                   <select name="periLesion" value={formData.periLesion} onChange={handleChange} className="w-full bg-[#0f172a] border border-gray-600 rounded-2xl p-4 text-white">
@@ -371,7 +379,7 @@ export default function CrackToothClassifier() {
 
         {/* Pocket Depth Modal */}
         {showPocketModal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100]">
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4">
             <div className="bg-[#1e2937] p-8 rounded-3xl w-full max-w-sm mx-4 border border-gray-600">
               <h3 className="text-xl font-semibold mb-6 text-center">Probing Depth at this site?</h3>
               <div className="space-y-3">

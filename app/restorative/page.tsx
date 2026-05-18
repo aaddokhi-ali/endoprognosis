@@ -13,13 +13,13 @@ export default function RestorativeRecommendation() {
   const [rec, setRec] = useState("");
   const [clinicianHTML, setClinicianHTML] = useState("");
   const [warningHTML, setWarningHTML] = useState("");
-  const [isClient, setIsClient] = useState(false);   // ← Only this line was added
+  const [isClient, setIsClient] = useState(false);
 
   const { user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    setIsClient(true);   // ← Only this line was added
+    setIsClient(true);
   }, []);
 
   useEffect(() => {
@@ -91,7 +91,6 @@ export default function RestorativeRecommendation() {
 
   const toggleTheme = () => setIsDark(!isDark);
 
-  // Show loading state until client is ready (prevents flash)
   if (!isClient) {
     return (
       <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
@@ -114,9 +113,9 @@ export default function RestorativeRecommendation() {
           <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/60 to-black/80" />
         </div>
 
-        <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
+        <div className="relative z-10 flex min-h-screen items-center justify-center px-4 sm:px-6 py-12">
           <div className="w-full max-w-md">
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 text-center">
+            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 sm:p-10 text-center">
               <h1 className="text-4xl font-bold mb-8 text-red-400">No Data Found</h1>
               <p className="text-xl mb-10 text-gray-300">Please go back to the Predictor and calculate the case first.</p>
               <Link 
@@ -146,25 +145,25 @@ export default function RestorativeRecommendation() {
         <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/60 to-black/80" />
       </div>
 
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-12">
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         <div className="w-full max-w-5xl">
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 sm:p-10 shadow-2xl">
             
-            <div className="text-center mb-10">
+            <div className="text-center mb-8 sm:mb-10">
               <div className="flex justify-center mb-6">
                 <Image
                   src="https://iili.io/B6RcxlS.png"
                   alt="Endoprognosis Logo"
                   width={220}
                   height={80}
-                  className="h-16 w-auto drop-shadow-lg"
+                  className="h-14 sm:h-16 w-auto drop-shadow-lg"
                   priority
                 />
               </div>
-              <h1 className="text-5xl font-serif tracking-wider text-white mb-3">
+              <h1 className="text-3xl sm:text-5xl font-serif tracking-wider text-white mb-3">
                 Restorative Treatment Recommendation
               </h1>
-              <p className="text-2xl text-gray-300">
+              <p className="text-xl sm:text-2xl text-gray-300">
                 Tooth #{data.toothNumber} — {toothType.charAt(0).toUpperCase() + toothType.slice(1)}
               </p>
             </div>
@@ -176,20 +175,20 @@ export default function RestorativeRecommendation() {
               />
             )}
 
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-10 mb-10">
-              <h2 className="text-3xl font-bold text-[#10b981] mb-6 text-center">Recommended Final Restoration</h2>
-              <p className="text-4xl font-semibold text-white text-center leading-tight">
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 sm:p-10 mb-8 sm:mb-10">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#10b981] mb-6 text-center">Recommended Final Restoration</h2>
+              <p className="text-3xl sm:text-4xl font-semibold text-white text-center leading-tight">
                 {rec}
               </p>
             </div>
 
             <div 
-              className="mb-10" 
+              className="mb-8 sm:mb-10" 
               dangerouslySetInnerHTML={{ __html: clinicianHTML }} 
             />
 
-            <div className="p-8 bg-white/5 border border-white/10 rounded-2xl text-center mb-12">
-              <p className="text-gray-300 text-lg leading-relaxed">
+            <div className="p-6 sm:p-8 bg-white/5 border border-white/10 rounded-2xl text-center mb-10 sm:mb-12">
+              <p className="text-gray-300 text-base sm:text-lg leading-relaxed">
                 Final decision must consider occlusion, parafunction, esthetic demands, and your clinical judgment.<br />
                 Always prioritize: <strong>coronal seal • cuspal coverage • ferrule • minimal tooth removal</strong>.
               </p>
@@ -218,7 +217,7 @@ export default function RestorativeRecommendation() {
 
       {/* Bottom Navigation */}
       <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
-        <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap justify-center gap-x-6 sm:gap-x-8 gap-y-2">
           <Link href="/about" className="hover:text-white transition">About</Link>
           <Link href="/references" className="hover:text-white transition">References</Link>
           <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>
