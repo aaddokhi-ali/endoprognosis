@@ -252,14 +252,14 @@ export default function LuxationInjuriesClient() {
 
       <div className="min-h-screen bg-[#0a1428] text-white">
         {/* Hero Header */}
-        <div className="bg-gradient-to-br from-indigo-950 to-[#0a1428] py-16 border-b border-white/10">
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="flex justify-between items-center">
+        <div className="bg-gradient-to-br from-indigo-950 to-[#0a1428] py-12 sm:py-16 border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
               <div>
-                <h1 className="text-5xl font-bold flex items-center gap-4">
+                <h1 className="text-4xl sm:text-5xl font-bold flex items-center gap-4">
                   🔄 Luxation Injuries
                 </h1>
-                <p className="text-2xl text-indigo-300 mt-3">Diagnostic Guide & Management</p>
+                <p className="text-xl sm:text-2xl text-indigo-300 mt-3">Diagnostic Guide & Management</p>
               </div>
               <div className="text-right text-indigo-400 text-sm">
                 IADT 2020 • AAE Guidelines
@@ -269,7 +269,7 @@ export default function LuxationInjuriesClient() {
         </div>
 
         {/* Current Case Header */}
-        <div className="max-w-7xl mx-auto px-6 py-6 border-b border-white/10 bg-white/5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 border-b border-white/10 bg-white/5">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <p className="text-sm text-gray-400">CURRENT CASE</p>
@@ -285,17 +285,17 @@ export default function LuxationInjuriesClient() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 py-12">
-          <div className="grid md:grid-cols-12 gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* Left Diagnostic Panel */}
-            <div className="md:col-span-5 bg-white/5 border border-white/10 rounded-3xl p-10">
+            <div className="lg:col-span-5 bg-white/5 border border-white/10 rounded-3xl p-6 sm:p-10">
               <h2 className="text-3xl font-semibold mb-8 flex items-center gap-3">
                 Diagnostic Guide
               </h2>
               <p className="text-gray-400 mb-8">Answer the questions below — the system will identify the most likely luxation type and provide full management.</p>
 
               <div className="space-y-8">
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm mb-2 text-gray-400">Patient Name</label>
                     <input type="text" value={patientInfo.patientName || ""} className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white" readOnly />
@@ -306,7 +306,7 @@ export default function LuxationInjuriesClient() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                   <div>
                     <label className="block text-sm mb-2 text-gray-400">Age (years)</label>
                     <input type="text" value={patientInfo.age || ""} className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white" readOnly />
@@ -377,14 +377,14 @@ export default function LuxationInjuriesClient() {
               <button 
                 onClick={identifyAndGenerate} 
                 disabled={isGenerating}
-                className="mt-12 w-full bg-gradient-to-r from-indigo-700 to-blue-600 hover:from-indigo-800 hover:to-blue-700 disabled:opacity-70 text-white py-7 rounded-3xl font-bold text-2xl flex items-center justify-center gap-4 shadow-lg transition-all"
+                className="mt-12 w-full bg-gradient-to-r from-indigo-700 to-blue-600 hover:from-indigo-800 hover:to-blue-700 disabled:opacity-70 text-white py-6 sm:py-7 rounded-3xl font-bold text-xl sm:text-2xl flex items-center justify-center gap-4 shadow-lg transition-all"
               >
                 {isGenerating ? "IDENTIFYING & GENERATING..." : "IDENTIFY TYPE & GENERATE PROTOCOL"}
               </button>
             </div>
 
             {/* Result Panel */}
-            <div className="md:col-span-7 bg-white/5 border border-white/10 rounded-3xl p-10 min-h-[900px] overflow-auto">
+            <div className="lg:col-span-7 bg-white/5 border border-white/10 rounded-3xl p-6 sm:p-10 min-h-[700px] overflow-auto">
               {!result ? (
                 <div className="h-full flex items-center justify-center text-center text-gray-500">
                   <div>
@@ -396,12 +396,12 @@ export default function LuxationInjuriesClient() {
                 <div dangerouslySetInnerHTML={{ __html: result }} />
               )}
 
-              <div className="mt-12 flex gap-6">
+              <div className="mt-12 flex flex-col sm:flex-row gap-4">
                 <button 
                   onClick={exportPDF} 
                   disabled={isGenerating || !result}
                   className="flex-1 bg-indigo-700 hover:bg-indigo-800 disabled:bg-gray-600 disabled:cursor-not-allowed 
-                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
+                             text-white py-6 sm:py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
                 >
                   {isGenerating ? "GENERATING PDF..." : "Export as PDF"}
                 </button>
@@ -409,7 +409,7 @@ export default function LuxationInjuriesClient() {
                   onClick={handleSaveCase} 
                   disabled={!result}
                   className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed 
-                             text-white py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
+                             text-white py-6 sm:py-7 rounded-3xl font-semibold text-xl flex items-center justify-center gap-3 transition-all"
                 >
                   Save Case
                 </button>
