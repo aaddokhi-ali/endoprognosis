@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, startAfter, limit } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { useAuth } from "../context/AuthContext";
 import Navigation from "../components/navigation";
@@ -39,7 +39,10 @@ interface SavedCase {
 
 export default function MyCases() {
   const [cases, setCases] = useState<SavedCase[]>([]);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<"All" | "Crack Cases" | "No Treatment" | "In-Progress" | "Done" | "Postpone">("All");
@@ -47,48 +50,79 @@ export default function MyCases() {
   const { user } = useAuth();
   const router = useRouter();
 
-  // Realtime listener
+  const PAGE_SIZE = 15;   // You can change this number
+
+  // Load cases with pagination
+  const loadCases = async (loadMore = false) => {
+    if (!user) return;
+
+    if (loadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setCases([]);
+      setLastDoc(null);
+      setHasMore(true);
+    }
+
+    setError(null);
+
+    try {
+      let q = query(
+        collection(db, "cases"),
+        where("userId", "==", user.uid),
+        orderBy("createdAt", "desc"),
+        limit(PAGE_SIZE)
+      );
+
+      if (loadMore && lastDoc) {
+        q = query(q, startAfter(lastDoc));
+      }
+
+      const snapshot = await getDocs(q);
+
+      const newCases: SavedCase[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        newCases.push({
+          id: doc.id,
+          ...data,
+          treatmentStatus: data.treatmentStatus || "No Treatment",
+          followUpDate: data.followUpDate || null,
+          affectingFactors: data.affectingFactors || [],
+        } as SavedCase);
+      });
+
+      if (loadMore) {
+        setCases(prev => [...prev, ...newCases]);
+      } else {
+        setCases(newCases);
+      }
+
+      if (snapshot.docs.length < PAGE_SIZE) {
+        setHasMore(false);
+      }
+
+      if (snapshot.docs.length > 0) {
+        setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+      }
+    } catch (err) {
+      console.error("Error fetching cases:", err);
+      setError("Failed to load your cases.");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  // Load cases when user is available
   useEffect(() => {
     if (!user) {
       setError("Please log in to view your cases.");
       setLoading(false);
       return;
     }
-
-    setLoading(true);
-    setError(null);
-
-    const q = query(
-      collection(db, "cases"),
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
-
-    const unsubscribe = onSnapshot(q, 
-      (querySnapshot) => {
-        const casesList: SavedCase[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          casesList.push({
-            id: doc.id,
-            ...data,
-            treatmentStatus: data.treatmentStatus || "No Treatment",
-            followUpDate: data.followUpDate || null,
-            affectingFactors: data.affectingFactors || [],
-          } as SavedCase);
-        });
-
-        setCases(casesList);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error fetching cases:", err);
-        setError("Failed to load your cases.");
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
+    loadCases(false);
   }, [user]);
 
   const filteredCases = useMemo(() => {
@@ -116,7 +150,6 @@ export default function MyCases() {
 
         if (searchableText.includes(term)) return true;
 
-        // Specific smart search
         if (term.includes("female") && c.gender?.toLowerCase() === "female") return true;
         if (term.includes("male") && c.gender?.toLowerCase() === "male") return true;
 
@@ -283,7 +316,6 @@ export default function MyCases() {
                       <div className="flex-1">
                         <h3 className="text-2xl font-bold">{c.caseName}</h3>
                         
-                        {/* Phone Number Added */}
                         {c.phoneNumber && (
                           <p className="text-[#60a5fa] text-lg mt-2 flex items-center gap-2">
                             📞 {c.phoneNumber}
@@ -374,6 +406,19 @@ export default function MyCases() {
               </div>
             </div>
           ))}
+
+          {/* Load More Button */}
+          {!loading && hasMore && (
+            <div className="flex justify-center mt-12">
+              <button
+                onClick={() => loadCases(true)}
+                disabled={loadingMore}
+                className="bg-[#1e2937] hover:bg-gray-700 px-10 py-4 rounded-2xl font-semibold text-lg transition-all disabled:opacity-50"
+              >
+                {loadingMore ? "Loading more cases..." : "Load More Cases"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </ProtectedRoute>
