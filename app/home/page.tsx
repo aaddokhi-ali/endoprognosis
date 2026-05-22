@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import Navigation from "../components/navigation";
 import LoadingScreen from "../components/LoadingScreen";
 
+const ADMIN_EMAIL = "aaddokhi@endoprognosis.org";
+
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -30,21 +32,22 @@ export default function HomePage() {
     }
   }, [user]);
 
-  // Show loading screen while checking authentication
   if (authLoading) {
     return <LoadingScreen message="Loading dashboard..." />;
   }
 
-  // Safety: Don't render anything if no user
   if (!user) {
     return null;
   }
+
+  const isAdmin = user.email === ADMIN_EMAIL;
 
   return (
     <>
       <Navigation />
 
       <div className="min-h-screen relative overflow-hidden bg-[#0a1428]">
+
         {/* Background Image */}
         <div className="absolute inset-0 z-0">
           <Image
@@ -58,6 +61,7 @@ export default function HomePage() {
         </div>
 
         <div className="relative z-10">
+
           {/* Hero Section */}
           <div className="pt-20 pb-16 text-center px-6">
             <h1 className="text-6xl md:text-7xl font-serif tracking-wider text-white mb-6">
@@ -66,14 +70,33 @@ export default function HomePage() {
             <p className="text-2xl text-gray-300 max-w-2xl mx-auto">
               Your intelligent clinical decision support system is ready.
             </p>
+
+            {/* ── ADMIN INBOX BUTTON — only visible to aaddokhi@endoprognosis.org ── */}
+            {isAdmin && (
+              <div className="mt-8 flex justify-center">
+                <button
+                  onClick={() => router.push("/inbox/requests")}
+                  className="group relative flex items-center gap-3 bg-[#f5d76e]/10 hover:bg-[#f5d76e]/20 border border-[#f5d76e]/40 hover:border-[#f5d76e] text-[#f5d76e] px-6 py-3 rounded-2xl font-semibold text-sm transition-all duration-300"
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f5d76e] opacity-60" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#f5d76e]" />
+                  </span>
+                  Patient Requests Inbox
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="group-hover:translate-x-1 transition-transform">
+                    <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Tools Grid */}
           <div className="max-w-6xl mx-auto px-6 pb-20">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              
+
               {/* EPP Card */}
-              <div 
+              <div
                 onClick={() => router.push("/predictor")}
                 className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl overflow-hidden hover:border-[#10b981] cursor-pointer transition-all duration-300"
               >
@@ -98,7 +121,7 @@ export default function HomePage() {
               </div>
 
               {/* Dental Trauma Center Card */}
-              <div 
+              <div
                 onClick={() => router.push("/dental-trauma-center")}
                 className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl overflow-hidden hover:border-[#10b981] cursor-pointer transition-all duration-300"
               >
@@ -123,7 +146,7 @@ export default function HomePage() {
               </div>
 
               {/* Crack Tooth Classifier Card */}
-              <div 
+              <div
                 onClick={() => router.push("/crack-classifier")}
                 className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl overflow-hidden hover:border-[#10b981] cursor-pointer transition-all duration-300"
               >
@@ -146,6 +169,7 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -153,24 +177,22 @@ export default function HomePage() {
         {/* Bottom Navigation */}
         <div className="relative z-50 border-t border-white/10 bg-black/60 backdrop-blur-md py-6 text-center text-sm text-gray-400">
           <div className="max-w-7xl mx-auto px-6 flex flex-wrap justify-center gap-x-8 gap-y-2">
-            <Link href="/about" className="hover:text-white transition">About</Link>
+            <Link href="/about"      className="hover:text-white transition">About</Link>
             <Link href="/references" className="hover:text-white transition">References</Link>
             <Link href="/how-to-use" className="hover:text-white transition">How to Use</Link>
-            <Link href="/contact" className="hover:text-white transition">Contact Us</Link>
-            <Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link>
-            <Link href="/terms" className="hover:text-white transition">Terms of Service</Link>
+            <Link href="/contact"    className="hover:text-white transition">Contact Us</Link>
+            <Link href="/privacy"    className="hover:text-white transition">Privacy Policy</Link>
+            <Link href="/terms"      className="hover:text-white transition">Terms of Service</Link>
           </div>
-
-          {/* Support Email */}
-  <div className="mt-6 text-xs">
-    Need help? Contact us at{" "}
-    <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
-      support@endoprognosis.org
-    </a>
-  </div>
-  
+          <div className="mt-6 text-xs">
+            Need help? Contact us at{" "}
+            <a href="mailto:support@endoprognosis.org" className="text-[#10b981] hover:underline">
+              support@endoprognosis.org
+            </a>
+          </div>
           <p className="mt-6 text-xs">© 2026 Endoprognosis • All Rights Reserved</p>
         </div>
+
       </div>
     </>
   );

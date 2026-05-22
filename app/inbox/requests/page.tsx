@@ -4,7 +4,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
-import { initializeApp, getApps } from "firebase/app";
 import {
   getFirestore,
   collection,
@@ -16,21 +15,12 @@ import {
   QueryDocumentSnapshot,
   DocumentData,
 } from "firebase/firestore";
+import { app } from "../../firebaseConfig";
 
-// ── FIREBASE ──
-const firebaseConfig = {
-  apiKey: "AIzaSyAVfaDk6jrnkUt1MKgi3fbdslPiyj8f3Vo",
-  authDomain: "endoprognosis-prod.firebaseapp.com",
-  projectId: "endoprognosis-prod",
-  storageBucket: "endoprognosis-prod.firebasestorage.app",
-  messagingSenderId: "130485316465",
-  appId: "1:130485316465:web:67c6c2dba9f6a8caabe4d0",
-  measurementId: "G-TH0V411V1M",
-};
-const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const db = getFirestore(firebaseApp);
+// ── FIRESTORE ──
+const db = getFirestore(app);
 
-const ADMIN_EMAIL = "addokhi@endoprognosis.org";
+const ADMIN_EMAIL = "aaddokhi@endoprognosis.org";
 
 // ── TYPES ──
 type ImpressionType = "emergency" | "urgent" | "routine" | "info";

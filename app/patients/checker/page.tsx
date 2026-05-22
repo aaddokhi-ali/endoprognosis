@@ -1,23 +1,13 @@
-// app/patients/page.tsx
+// app/patients/checker/page.tsx  ← DENTAL SYMPTOM CHECKER
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { initializeApp, getApps } from "firebase/app";
 import { getFirestore, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { app } from "../../firebaseConfig";
 
-// ── FIREBASE ──
-const firebaseConfig = {
-  apiKey: "AIzaSyAVfaDk6jrnkUt1MKgi3fbdslPiyj8f3Vo",
-  authDomain: "endoprognosis-prod.firebaseapp.com",
-  projectId: "endoprognosis-prod",
-  storageBucket: "endoprognosis-prod.firebasestorage.app",
-  messagingSenderId: "130485316465",
-  appId: "1:130485316465:web:67c6c2dba9f6a8caabe4d0",
-  measurementId: "G-TH0V411V1M",
-};
-const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const db = getFirestore(firebaseApp);
+// ── FIRESTORE ──
+const db = getFirestore(app);
 
 // ── TYPES ──
 type Lang = "en" | "ar";
@@ -399,6 +389,7 @@ export default function PatientsPage() {
         scaling,
         toothState,
         impression: getPrimaryImpression(),
+        status: "new",
         lang,
         timestamp: serverTimestamp(),
       });
@@ -448,7 +439,7 @@ export default function PatientsPage() {
       {/* ── HEADER ── */}
       <header className="relative z-20 flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/40 backdrop-blur-sm">
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/patients")}
           className="flex items-center gap-2 text-gray-400 hover:text-[#f5d76e] transition-colors text-sm"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -884,7 +875,7 @@ export default function PatientsPage() {
                   {t("Start a new assessment", "بدء تقييم جديد")}
                 </button>
                 <button
-                  onClick={() => router.push("/")}
+                  onClick={() => router.push("/patients")}
                   className="text-gray-400 hover:text-gray-200 border border-[#1e2e4a] hover:border-gray-600 px-8 py-3 rounded-full text-sm transition-all"
                 >
                   {t("Back to Home", "العودة للرئيسية")}
