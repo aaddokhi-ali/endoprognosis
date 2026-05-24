@@ -11,6 +11,8 @@ import {
 import { db } from "../../firebaseConfig";
 import Navigation from "../../components/navigation";
 import ProtectedRoute from "../../components/protectedroute";
+import GuestLimitModal from "../../components/GuestLimitModal";
+import { useGuestUsage } from "../../hooks/useGuestUsage";
 
 // ── STAGE CONFIG ──
 const STAGE_CONFIG: Record<string, {
@@ -96,29 +98,62 @@ function FactorRow({ factor, index }: { factor: string; index: number }) {
 // MAIN PAGE
 // ══════════════════════════════════════════════
 export default function CrackClassifierResult() {
-  const [result, setResult]             = useState<any>(null);
+  const [result, setResult]               = useState<any>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [caseName, setCaseName]         = useState("");
-  const [phoneNumber, setPhoneNumber]   = useState("");
-  const [followUpDate, setFollowUpDate] = useState("");
-  const [furtherNote, setFurtherNote]   = useState("");
-  const [saving, setSaving]             = useState(false);
-  const [saveSuccess, setSaveSuccess]   = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [caseName, setCaseName]           = useState("");
+  const [phoneNumber, setPhoneNumber]     = useState("");
+  const [followUpDate, setFollowUpDate]   = useState("");
+  const [furtherNote, setFurtherNote]     = useState("");
+  const [saving, setSaving]               = useState(false);
+  const [saveSuccess, setSaveSuccess]     = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  const { user } = useAuth();
-  const router   = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { checkUsage } = useGuestUsage();
+  const router = useRouter();
 
+  // ── Load from localStorage ──
   useEffect(() => {
     const raw = localStorage.getItem("lastCrackResult");
-    if (raw) {
-      try { setResult(JSON.parse(raw)); }
-      catch { router.push("/crack-classifier"); }
-    } else {
+    if (!raw) {
+      router.push("/crack-classifier");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+
+      const runCheck = async () => {
+        // If user is logged in, skip guest check entirely
+        if (user) {
+          setResult(parsed);
+          return;
+        }
+        // Wait for auth state to resolve before deciding
+        if (authLoading) return;
+
+        // User is definitely a guest — check their usage
+        const allowed = await checkUsage();
+        if (!allowed) {
+          setShowLimitModal(true);
+        } else {
+          setResult(parsed);
+        }
+      };
+
+      runCheck();
+    } catch {
       router.push("/crack-classifier");
     }
-  }, [router]);
+  }, [router, user, authLoading]); // re-runs when auth state resolves
 
+  // ── Guest limit modal ──
+  if (showLimitModal) {
+    return <GuestLimitModal />;
+  }
+
+  // ── Loading ──
   if (!result) return (
     <ProtectedRoute><Navigation />
       <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
@@ -127,14 +162,14 @@ export default function CrackClassifierResult() {
     </ProtectedRoute>
   );
 
-  const iowa       = result.iowa;
-  const isVRF      = result.isVRF;
-  const vrfLevel   = result.vrfLevel ?? "low";
-  const vrfCfg     = VRF_CONFIG[vrfLevel];
-  const stageCfg   = iowa ? STAGE_CONFIG[iowa.stage] : null;
-  const factors    = result.affectingFactors ?? [];
-  const sites      = result.sites ?? [];
-  const treatRec   = result.treatmentRec ?? "";
+  const iowa        = result.iowa;
+  const isVRF       = result.isVRF;
+  const vrfLevel    = result.vrfLevel ?? "low";
+  const vrfCfg      = VRF_CONFIG[vrfLevel];
+  const stageCfg    = iowa ? STAGE_CONFIG[iowa.stage] : null;
+  const factors     = result.affectingFactors ?? [];
+  const sites       = result.sites ?? [];
+  const treatRec    = result.treatmentRec ?? "";
   const isPractical = isVRF
     ? (vrfLevel !== "high")
     : iowa ? (iowa.canRetain && iowa.successRate >= 50) : true;
@@ -148,7 +183,6 @@ export default function CrackClassifierResult() {
     if (saving) return;
     setSaving(true);
     try {
-      // Duplicate check
       const q = query(collection(db, "cases"),
         where("userId",      "==", user!.uid),
         where("toothNumber", "==", result.toothNumber),
@@ -167,14 +201,11 @@ export default function CrackClassifierResult() {
       }
 
       await addDoc(collection(db, "cases"), {
-        // ── Identity ──
         caseName:       caseName.trim(),
         phoneNumber:    phoneNumber.trim(),
         furtherNote:    furtherNote.trim(),
         followUpDate:   followUpDate || null,
         type:           "crack-classifier",
-
-        // ── My Cases compatibility ──
         toothNumber:    result.toothNumber || "",
         toothType:      result.toothType   || "Molar",
         treatmentStatus:"No Treatment",
@@ -182,16 +213,12 @@ export default function CrackClassifierResult() {
         isPractical:    isPractical,
         survivalEstimate: iowa?.successRate ?? (isVRF && vrfLevel === "high" ? 20 : null),
         affectingFactors: factors,
-
-        // ── Crack specific ──
         classification: isVRF ? `VRF — ${vrfCfg.title}` : `COF — Iowa Stage ${iowa?.stage ?? ""}`,
         iowaStage:      iowa?.stage  ?? "",
         isVRF:          isVRF,
         vrfLevel:       vrfLevel,
         vrfScore:       result.vrfScore ?? 0,
         deepCount:      result.deepCount ?? 0,
-
-        // ── Full data ──
         patientInputs: {
           ...result.formData,
           sites: sites,
@@ -201,7 +228,6 @@ export default function CrackClassifierResult() {
           iowa, isVRF, vrfLevel, vrfScore: result.vrfScore,
           treatmentRec: treatRec, affectingFactors: factors,
         },
-
         userId:    user!.uid,
         createdAt: serverTimestamp(),
         savedAt:   new Date().toISOString(),
@@ -354,8 +380,6 @@ export default function CrackClassifierResult() {
                   <SuccessGauge value={iowa.successRate} label="1-year success rate with treatment" />
                 )}
               </div>
-
-              {/* Retain / Extract badge */}
               <div className="mt-4 flex items-center gap-2">
                 <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
                   iowa.canRetain
