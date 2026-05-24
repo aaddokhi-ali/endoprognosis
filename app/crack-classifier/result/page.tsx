@@ -11,75 +11,63 @@ import {
 import { db } from "../../firebaseConfig";
 import Navigation from "../../components/navigation";
 import ProtectedRoute from "../../components/protectedroute";
-import GuestLimitModal from "../../components/GuestLimitModal";
-import { useGuestUsage } from "../../hooks/useGuestUsage";
 
 // ── STAGE CONFIG ──
 const STAGE_CONFIG: Record<string, {
-  color: string; bg: string; border: string;
-  description: string; emoji: string;
+  color: string; bg: string; border: string; emoji: string; label: string;
 }> = {
-  I:   { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/25",
-         description: "Crack within crown, no ridge involvement",       emoji: "🟢" },
-  II:  { color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25",
-         description: "Extension to distal marginal ridge",             emoji: "🟡" },
-  III: { color: "text-orange-400",  bg: "bg-orange-500/10",  border: "border-orange-500/25",
-         description: "Extension with pulpal/periapical involvement",   emoji: "🟠" },
-  IV:  { color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",
-         description: "Extension into periodontium (deep pocket)",      emoji: "🔴" },
-  V:   { color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",
-         description: "Complete split tooth — non-restorable",          emoji: "⛔" },
+  I:   { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", emoji: "🟢", label: "Excellent prognosis" },
+  II:  { color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   emoji: "🟡", label: "Favourable prognosis" },
+  III: { color: "text-orange-400",  bg: "bg-orange-500/10",  border: "border-orange-500/30",  emoji: "🟠", label: "Moderate prognosis" },
+  IV:  { color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/30",     emoji: "🔴", label: "Guarded prognosis" },
 };
 
-const VRF_CONFIG: Record<string, { color: string; bg: string; border: string; title: string }> = {
-  low:       { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/25",
-               title: "Low VRF Suspicion" },
-  suspected: { color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25",
-               title: "VRF Suspected" },
-  high:      { color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",
-               title: "VRF Highly Probable" },
+const VRF_CONFIG: Record<string, {
+  color: string; bg: string; border: string; title: string;
+}> = {
+  low:       { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/25", title: "Low VRF Suspicion" },
+  suspected: { color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25",   title: "VRF Suspected" },
+  high:      { color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25",     title: "VRF Highly Probable" },
 };
 
 const LEVEL_COLOR: Record<string, string> = {
   normal: "#10b981", attachment: "#f59e0b", deep: "#ef4444",
 };
 const LEVEL_LABEL: Record<string, string> = {
-  normal: "Normal",  attachment: "Attachment loss", deep: "Deep ≥5mm",
+  normal: "Normal", attachment: "Attachment loss", deep: "Deep ≥5mm",
 };
 
-// ── SUCCESS RATE GAUGE ──
-function SuccessGauge({ value, label }: { value: number; label: string }) {
-  const color = value >= 80 ? "#10b981" : value >= 60 ? "#f59e0b" : value >= 40 ? "#f97316" : "#ef4444";
+// ── IOWA STAGE GAUGE ──
+function StageGauge({ stage, successRate }: { stage: string; successRate: number }) {
+  const color = successRate >= 80 ? "#10b981" : successRate >= 65 ? "#f59e0b" : successRate >= 50 ? "#f97316" : "#ef4444";
   const r = 44, circ = 2 * Math.PI * r;
-  const dash = (value / 100) * circ * 0.75;
+  const dash = (successRate / 100) * circ * 0.75;
   return (
     <div className="flex flex-col items-center">
       <div className="relative" style={{ width: 120, height: 120 }}>
         <svg width="120" height="120" viewBox="0 0 120 120">
           <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.06)"
             strokeWidth="8" strokeDasharray={`${circ * 0.75} ${circ}`}
-            strokeDashoffset={0} strokeLinecap="round" transform="rotate(-225 60 60)" />
+            strokeLinecap="round" transform="rotate(-225 60 60)" />
           <circle cx="60" cy="60" r={r} fill="none" stroke={color}
             strokeWidth="8" strokeDasharray={`${dash} ${circ}`}
-            strokeDashoffset={0} strokeLinecap="round" transform="rotate(-225 60 60)"
+            strokeLinecap="round" transform="rotate(-225 60 60)"
             style={{ filter: `drop-shadow(0 0 6px ${color}60)` }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-black" style={{ color }}>{value}%</span>
-          <span className="text-[9px] text-gray-600 uppercase tracking-wider">success</span>
+          <span className="text-2xl font-black" style={{ color }}>{successRate}%</span>
+          <span className="text-[9px] text-gray-600 uppercase tracking-wider">1-yr success</span>
         </div>
       </div>
-      <p className="text-xs text-gray-400 text-center mt-2 max-w-[120px]">{label}</p>
     </div>
   );
 }
 
 // ── FACTOR ROW ──
-function FactorRow({ factor, index }: { factor: string; index: number }) {
-  const isHigh = factor.toLowerCase().includes("deep") || factor.toLowerCase().includes("j-shaped") ||
-    factor.toLowerCase().includes("apico") || factor.toLowerCase().includes("split");
-  const isMed  = factor.toLowerCase().includes("swelling") || factor.toLowerCase().includes("sinus") ||
-    factor.toLowerCase().includes("percussion") || factor.toLowerCase().includes("periapical");
+function FactorRow({ factor }: { factor: string }) {
+  const f = factor.toLowerCase();
+  const isHigh = f.includes("deep") || f.includes("j-shaped") || f.includes("apico") || f.includes("cap") || f.includes("aaa");
+  const isMed  = f.includes("swelling") || f.includes("sinus") || f.includes("percussion") || f.includes("distal");
   const dot    = isHigh ? "bg-red-500" : isMed ? "bg-amber-500" : "bg-blue-400";
   const badge  = isHigh ? "bg-red-500/15 text-red-400" : isMed ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400";
   const weight = isHigh ? "High impact" : isMed ? "Moderate" : "Contributing";
@@ -100,7 +88,6 @@ function FactorRow({ factor, index }: { factor: string; index: number }) {
 export default function CrackClassifierResult() {
   const [result, setResult]               = useState<any>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [showLimitModal, setShowLimitModal] = useState(false);
   const [caseName, setCaseName]           = useState("");
   const [phoneNumber, setPhoneNumber]     = useState("");
   const [followUpDate, setFollowUpDate]   = useState("");
@@ -109,51 +96,19 @@ export default function CrackClassifierResult() {
   const [saveSuccess, setSaveSuccess]     = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  const { user, loading: authLoading } = useAuth();
-  const { checkUsage } = useGuestUsage();
-  const router = useRouter();
+  const { user } = useAuth();
+  const router   = useRouter();
 
-  // ── Load from localStorage ──
   useEffect(() => {
     const raw = localStorage.getItem("lastCrackResult");
-    if (!raw) {
-      router.push("/crack-classifier");
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-
-      const runCheck = async () => {
-        // If user is logged in, skip guest check entirely
-        if (user) {
-          setResult(parsed);
-          return;
-        }
-        // Wait for auth state to resolve before deciding
-        if (authLoading) return;
-
-        // User is definitely a guest — check their usage
-        const allowed = await checkUsage();
-        if (!allowed) {
-          setShowLimitModal(true);
-        } else {
-          setResult(parsed);
-        }
-      };
-
-      runCheck();
-    } catch {
+    if (raw) {
+      try { setResult(JSON.parse(raw)); }
+      catch { router.push("/crack-classifier"); }
+    } else {
       router.push("/crack-classifier");
     }
-  }, [router, user, authLoading]); // re-runs when auth state resolves
+  }, [router]);
 
-  // ── Guest limit modal ──
-  if (showLimitModal) {
-    return <GuestLimitModal />;
-  }
-
-  // ── Loading ──
   if (!result) return (
     <ProtectedRoute><Navigation />
       <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
@@ -162,17 +117,17 @@ export default function CrackClassifierResult() {
     </ProtectedRoute>
   );
 
-  const iowa        = result.iowa;
-  const isVRF       = result.isVRF;
-  const vrfLevel    = result.vrfLevel ?? "low";
-  const vrfCfg      = VRF_CONFIG[vrfLevel];
-  const stageCfg    = iowa ? STAGE_CONFIG[iowa.stage] : null;
-  const factors     = result.affectingFactors ?? [];
-  const sites       = result.sites ?? [];
-  const treatRec    = result.treatmentRec ?? "";
-  const isPractical = isVRF
-    ? (vrfLevel !== "high")
-    : iowa ? (iowa.canRetain && iowa.successRate >= 50) : true;
+  const iowa         = result.iowa;
+  const isVRF        = result.isVRF;
+  const vrfLevel     = result.vrfLevel ?? "low";
+  const vrfCfg       = VRF_CONFIG[vrfLevel];
+  const stageCfg     = iowa ? STAGE_CONFIG[iowa.stage] : null;
+  const factors      = result.affectingFactors ?? [];
+  const sites        = result.sites ?? [];
+  const rec          = result.recommendation ?? { primary: "", note: "" };
+  const crackVisible = result.crackVisible;
+  const periDx       = result.periDx;
+  const crackMethods = result.crackMethods ?? {};
 
   // ── SAVE ──
   const handleSaveCase = async () => {
@@ -201,32 +156,38 @@ export default function CrackClassifierResult() {
       }
 
       await addDoc(collection(db, "cases"), {
-        caseName:       caseName.trim(),
-        phoneNumber:    phoneNumber.trim(),
-        furtherNote:    furtherNote.trim(),
-        followUpDate:   followUpDate || null,
-        type:           "crack-classifier",
-        toothNumber:    result.toothNumber || "",
-        toothType:      result.toothType   || "Molar",
-        treatmentStatus:"No Treatment",
-        treatmentRec:   treatRec,
-        isPractical:    isPractical,
-        survivalEstimate: iowa?.successRate ?? (isVRF && vrfLevel === "high" ? 20 : null),
+        caseName:        caseName.trim(),
+        phoneNumber:     phoneNumber.trim(),
+        furtherNote:     furtherNote.trim(),
+        followUpDate:    followUpDate || null,
+        type:            "crack-classifier",
+        toothNumber:     result.toothNumber || "",
+        toothType:       result.toothType   || "Molar",
+        treatmentStatus: "No Treatment",
+        treatmentRec:    result.treatmentRec || "",
+        isPractical:     result.isPractical  ?? true,
+        survivalEstimate: iowa?.successRate  ?? null,
         affectingFactors: factors,
-        classification: isVRF ? `VRF — ${vrfCfg.title}` : `COF — Iowa Stage ${iowa?.stage ?? ""}`,
-        iowaStage:      iowa?.stage  ?? "",
-        isVRF:          isVRF,
-        vrfLevel:       vrfLevel,
-        vrfScore:       result.vrfScore ?? 0,
-        deepCount:      result.deepCount ?? 0,
+        classification:  isVRF
+          ? `VRF — ${vrfCfg.title}`
+          : iowa ? `Iowa Stage ${iowa.stage}` : "Crack not confirmed",
+        iowaStage:   iowa?.stage   ?? "",
+        isVRF,
+        vrfLevel,
+        vrfScore:    result.vrfScore ?? 0,
+        deepCount:   result.deepCount ?? 0,
+        crackVisible,
         patientInputs: {
           ...result.formData,
-          sites: sites,
+          sites,
           deepCount: result.deepCount,
         },
         predictionResult: {
-          iowa, isVRF, vrfLevel, vrfScore: result.vrfScore,
-          treatmentRec: treatRec, affectingFactors: factors,
+          iowa, isVRF, vrfLevel,
+          vrfScore:     result.vrfScore,
+          treatmentRec: result.treatmentRec,
+          affectingFactors: factors,
+          recommendation: rec,
         },
         userId:    user!.uid,
         createdAt: serverTimestamp(),
@@ -237,7 +198,7 @@ export default function CrackClassifierResult() {
       setShowSaveModal(false);
       setCaseName(""); setPhoneNumber(""); setFurtherNote(""); setFollowUpDate("");
       localStorage.removeItem("lastCrackResult");
-    } catch (err) {
+    } catch {
       alert("Failed to save case. Please try again.");
     } finally {
       setSaving(false);
@@ -251,37 +212,57 @@ export default function CrackClassifierResult() {
     try {
       const html2pdfModule = await import("html2pdf.js");
       const html2pdf = html2pdfModule.default || html2pdfModule;
-      const stageStr   = iowa ? `Iowa Stage ${iowa.stage} — ${iowa.label}` : "";
-      const vrfStr     = isVRF ? vrfCfg.title : "";
+
+      const stageBlock = iowa
+        ? `<div style="background:${iowa.stage==="I"?"#081a10":iowa.stage==="II"?"#1a1208":iowa.stage==="III"?"#1a0e00":"#1a0808"};border:2px solid ${iowa.stage==="I"?"#10b981":iowa.stage==="II"?"#f59e0b":iowa.stage==="III"?"#f97316":"#ef4444"};border-radius:12px;padding:20px;margin-bottom:20px;">
+            <p style="font-size:28px;font-weight:900;color:${iowa.stage==="I"?"#10b981":iowa.stage==="II"?"#f59e0b":iowa.stage==="III"?"#f97316":"#ef4444"};margin:0;">Iowa Stage ${iowa.stage}</p>
+            <p style="color:#94a3b8;font-size:13px;margin-top:6px;">${iowa.label}</p>
+            <p style="color:#94a3b8;font-size:13px;margin-top:4px;">1-year success rate: ${iowa.successRate}%</p>
+          </div>` : "";
+
+      const vrfBlock = isVRF
+        ? `<div style="background:${vrfLevel==="high"?"#1a0808":"#1a1208"};border:2px solid ${vrfLevel==="high"?"#ef4444":"#f59e0b"};border-radius:12px;padding:20px;margin-bottom:20px;">
+            <p style="font-size:22px;font-weight:900;color:${vrfLevel==="high"?"#ef4444":"#f59e0b"};margin:0;">Vertical Root Fracture — ${vrfCfg.title}</p>
+            <p style="color:#94a3b8;font-size:12px;margin-top:6px;">VRF Score: ${result.vrfScore}/13</p>
+            <p style="color:#94a3b8;font-size:11px;margin-top:4px;">Note: VRF cannot be confirmed without direct or microscopic visualization.</p>
+          </div>` : "";
+
+      const crackNote = !crackVisible
+        ? `<div style="background:#1a1200;border:1px solid #92400e;border-radius:10px;padding:14px;margin-bottom:16px;">
+            <p style="color:#fbbf24;font-size:12px;">⚠️ Crack was not confirmed by transillumination — Iowa Classification was not applied.</p>
+          </div>` : "";
+
       const factorRows = factors.map((f: string) =>
-        `<li style="padding:6px 0;border-bottom:1px solid #1e293b;font-size:13px;">• ${f}</li>`
+        `<li style="padding:6px 0;border-bottom:1px solid #1e293b;font-size:12px;">• ${f}</li>`
       ).join("");
+
       const siteRows = sites.map((s: any) =>
-        `<li style="padding:5px 0;border-bottom:1px solid #1e293b;font-size:12px;">
-          <span style="color:${LEVEL_COLOR[s.level]};font-weight:700">${s.label}:</span> ${LEVEL_LABEL[s.level]}
-        </li>`
+        `<li style="padding:5px 0;border-bottom:1px solid #1e293b;font-size:11px;color:${LEVEL_COLOR[s.level] ?? "#64748b"};">${s.label}: ${LEVEL_LABEL[s.level]}</li>`
       ).join("");
+
       const el = document.createElement("div");
       el.innerHTML = [
         '<div style="font-family:system-ui,sans-serif;color:#e2e8f0;background:#0a1428;padding:40px;line-height:1.6;">',
         '<div style="text-align:center;margin-bottom:28px;">',
-        '<h1 style="color:#10b981;font-size:26px;margin:0;">Crack Tooth Classification Report</h1>',
-        '<p style="color:#64748b;font-size:13px;margin-top:6px;">Tooth #' + result.toothNumber + ' · ' + result.toothType + ' · ' + new Date().toLocaleDateString("en-GB") + '</p>',
+        '<h1 style="color:#10b981;font-size:24px;margin:0;">Crack Tooth Classification Report</h1>',
+        '<p style="color:#64748b;font-size:13px;margin-top:6px;">Iowa Staging Index — Krell & Caplan 2018</p>',
+        '<p style="color:#64748b;font-size:12px;">Tooth #' + result.toothNumber + ' · ' + result.toothType + ' · ' + new Date().toLocaleDateString("en-GB") + '</p>',
         '</div>',
-        '<div style="background:' + (isVRF ? '#450a0a' : '#081a10') + ';border:2px solid ' + (isVRF ? '#ef4444' : '#10b981') + ';border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">',
-        '<p style="font-size:20px;font-weight:900;color:' + (isVRF ? '#ef4444' : '#10b981') + ';margin:0;">' + (isVRF ? vrfStr : stageStr) + '</p>',
-        iowa ? '<p style="color:#94a3b8;font-size:13px;margin-top:8px;">1-year success rate: ' + iowa.successRate + '% · ' + (iowa.canRetain ? "Retain" : "Extract") + '</p>' : '',
+        crackNote,
+        stageBlock,
+        vrfBlock,
+        '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:20px;">',
+        '<p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Clinical Guidance</p>',
+        '<p style="font-size:13px;color:#e2e8f0;margin-bottom:10px;">' + rec.primary + '</p>',
+        '<p style="font-size:11px;color:#f59e0b;font-style:italic;">' + rec.note + '</p>',
         '</div>',
-        '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:24px;">',
-        '<p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Treatment Recommendation</p>',
-        '<p style="font-size:14px;color:#10b981;font-weight:600;">' + treatRec + '</p>',
-        '</div>',
-        factors.length ? '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:24px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Key Findings</p><ul style="list-style:none;padding:0;margin:0;">' + factorRows + '</ul></div>' : '',
-        sites.length ? '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:24px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Probing Depths</p><ul style="list-style:none;padding:0;margin:0;">' + siteRows + '</ul></div>' : '',
-        '<p style="text-align:center;color:#ef4444;font-size:12px;margin-top:24px;">Clinical decision support only — always apply professional judgment.</p>',
-        '<p style="text-align:center;color:#475569;font-size:11px;margin-top:8px;">Endoprognosis · ' + new Date().getFullYear() + '</p>',
+        factors.length ? '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:20px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Key Findings</p><ul style="list-style:none;padding:0;margin:0;">' + factorRows + '</ul></div>' : '',
+        sites.length ? '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:20px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Probing Depths</p><ul style="list-style:none;padding:0;margin:0;">' + siteRows + '</ul></div>' : '',
+        '<p style="text-align:center;color:#ef4444;font-size:11px;margin-top:20px;">Clinical decision support only. Patient should be informed and provide informed consent before treatment.</p>',
+        '<p style="text-align:center;color:#475569;font-size:11px;margin-top:6px;">Endoprognosis · ' + new Date().getFullYear() + '</p>',
         '</div>',
       ].join("\n");
+
       document.body.appendChild(el);
       await html2pdf().from(el).set({
         margin: [10,15,10,15] as [number,number,number,number],
@@ -308,13 +289,14 @@ export default function CrackClassifierResult() {
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/70 to-[#0a1428]" />
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
             <p className="text-[11px] tracking-[4px] text-[#10b981]/70 uppercase mb-2">Classification Result</p>
-            <h1 className="text-3xl md:text-5xl font-bold bg-gradient-to-r from-[#10b981] via-white to-[#10b981] bg-clip-text text-transparent mb-2"
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-[#10b981] via-white to-[#10b981] bg-clip-text text-transparent mb-2"
               style={{ fontFamily: "Playfair Display, serif" }}>
               Crack Tooth Report
             </h1>
             <p className="text-gray-300 text-sm">
               Tooth <span className="text-[#10b981] font-bold">#{result.toothNumber}</span>
               {" · "}<span className="text-gray-400">{result.toothType}</span>
+              {" · "}<span className="text-gray-500 text-xs">Iowa Staging Index — Krell & Caplan 2018</span>
             </p>
           </div>
         </div>
@@ -332,7 +314,7 @@ export default function CrackClassifierResult() {
 
           {/* ── SAVE SUCCESS ── */}
           {saveSuccess && (
-            <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-5 py-3 rounded-2xl text-sm font-medium">
+            <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-5 py-3 rounded-2xl text-sm">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
               </svg>
@@ -340,103 +322,111 @@ export default function CrackClassifierResult() {
             </div>
           )}
 
-          {/* ── MAIN VERDICT ── */}
-          {isVRF ? (
-            <div className={`${vrfCfg.bg} border-2 ${vrfCfg.border} rounded-3xl p-6 md:p-8`}>
-              <div className="flex items-start justify-between flex-wrap gap-4">
-                <div>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Fracture Type</p>
-                  <h2 className={`text-2xl md:text-3xl font-black ${vrfCfg.color} mb-1`}>
-                    Vertical Root Fracture (VRF)
-                  </h2>
-                  <p className={`text-sm ${vrfCfg.color} font-semibold`}>{vrfCfg.title}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">VRF Score</p>
-                  <p className={`text-4xl font-black ${vrfCfg.color}`}>{result.vrfScore}<span className="text-sm text-gray-600">/13</span></p>
-                </div>
-              </div>
-              <div className="mt-4 h-2 bg-white/8 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: `${((result.vrfScore ?? 0) / 13) * 100}%`, background: vrfLevel === "high" ? "#ef4444" : vrfLevel === "suspected" ? "#f59e0b" : "#10b981" }} />
-              </div>
-              <p className="text-xs text-gray-500 mt-3 leading-relaxed">
-                Note: CBCT has limited reliability in detecting VRF. Confirmation via exploratory surgery or clinical monitoring is recommended.
-              </p>
-            </div>
-          ) : iowa && stageCfg ? (
-            <div className={`${stageCfg.bg} border-2 ${stageCfg.border} rounded-3xl p-6 md:p-8`}>
-              <div className="flex items-start justify-between flex-wrap gap-6">
-                <div className="flex-1">
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Iowa Classification (Krell & Caplan)</p>
-                  <div className="flex items-baseline gap-3 mb-1">
-                    <h2 className={`text-4xl md:text-5xl font-black ${stageCfg.color}`}>Stage {iowa.stage}</h2>
-                    <span className="text-lg font-semibold text-gray-400">{stageCfg.emoji}</span>
-                  </div>
-                  <p className={`text-sm font-semibold ${stageCfg.color} mb-2`}>{iowa.label}</p>
-                  <p className="text-xs text-gray-500">{stageCfg.description}</p>
-                </div>
-                {iowa.successRate > 0 && (
-                  <SuccessGauge value={iowa.successRate} label="1-year success rate with treatment" />
-                )}
-              </div>
-              <div className="mt-4 flex items-center gap-2">
-                <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                  iowa.canRetain
-                    ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-400"
-                    : "bg-red-500/15 border-red-500/25 text-red-400"
-                }`}>
-                  {iowa.canRetain ? "✅ Tooth can be retained" : "⛔ Extraction indicated"}
-                </span>
-                {iowa.stage === "V" && (
-                  <span className="text-xs text-red-400 font-medium">Split tooth — complete fracture</span>
-                )}
-              </div>
-            </div>
-          ) : null}
-
-          {/* ── TREATMENT RECOMMENDATION ── */}
-          {treatRec && (
-            <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">Treatment Recommendation</p>
-              <div className="flex items-start gap-3">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-[#10b981] flex-shrink-0 mt-0.5">
-                  <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <p className="text-sm font-semibold text-[#10b981] leading-relaxed">{treatRec}</p>
+          {/* ── CRACK NOT CONFIRMED WARNING ── */}
+          {!crackVisible && (
+            <div className="flex items-start gap-3 bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl px-5 py-4">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5">
+                <path d="M8 2L14 13H2L8 2Z" stroke="#f59e0b" strokeWidth="1.4" strokeLinejoin="round"/>
+                <path d="M8 7v3M8 11.5v.5" stroke="#f59e0b" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              <div>
+                <p className="text-sm font-bold text-amber-400 mb-1">Crack Not Confirmed — Iowa Classification Not Applied</p>
+                <p className="text-xs text-amber-300/80 leading-relaxed">
+                  The Iowa Staging Index requires direct or microscopic visualization of the crack (definite shadow blocking transillumination light). Clinical findings are recorded but no stage has been assigned. Confirm crack visibility before applying the classification.
+                </p>
               </div>
             </div>
           )}
 
-          {/* ── SUCCESS RATE CONTEXT (Iowa only) ── */}
-          {!isVRF && iowa && iowa.successRate > 0 && (
+          {/* ── IOWA STAGE VERDICT ── */}
+          {iowa && stageCfg && crackVisible && (
+            <div className={`${stageCfg.bg} border-2 ${stageCfg.border} rounded-3xl p-6 md:p-8`}>
+              <div className="flex items-start justify-between flex-wrap gap-6">
+                <div className="flex-1">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">Iowa Classification — Krell & Caplan 2018</p>
+                  <div className="flex items-baseline gap-3 mb-1">
+                    <h2 className={`text-4xl md:text-5xl font-black ${stageCfg.color}`}>Stage {iowa.stage}</h2>
+                    <span className="text-2xl">{stageCfg.emoji}</span>
+                  </div>
+                  <p className={`text-sm font-semibold ${stageCfg.color} mb-1`}>{stageCfg.label}</p>
+                  <p className="text-xs text-gray-500 leading-relaxed">{iowa.label}</p>
+                </div>
+                <StageGauge stage={iowa.stage} successRate={iowa.successRate} />
+              </div>
+            </div>
+          )}
+
+          {/* ── VRF VERDICT ── */}
+          {isVRF && (
+            <div className={`${vrfCfg.bg} border-2 ${vrfCfg.border} rounded-3xl p-6 md:p-8`}>
+              <div className="flex items-start justify-between flex-wrap gap-4">
+                <div>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-2">VRF Assessment</p>
+                  <h2 className={`text-2xl md:text-3xl font-black ${vrfCfg.color} mb-1`}>
+                    Vertical Root Fracture (VRF)
+                  </h2>
+                  <p className={`text-sm font-semibold ${vrfCfg.color}`}>{vrfCfg.title}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">VRF Score</p>
+                  <p className={`text-4xl font-black ${vrfCfg.color}`}>
+                    {result.vrfScore}<span className="text-sm text-gray-600">/13</span>
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 h-2 bg-white/8 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${((result.vrfScore ?? 0) / 13) * 100}%`,
+                    background: vrfLevel === "high" ? "#ef4444" : "#f59e0b",
+                  }} />
+              </div>
+              <p className="text-xs text-gray-500 mt-3 leading-relaxed">
+                VRF cannot be confirmed without direct or microscopic visualization during treatment or exploratory surgery. CBCT has limited reliability for VRF detection.
+              </p>
+            </div>
+          )}
+
+          {/* ── CLINICAL GUIDANCE ── */}
+          <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">Clinical Guidance</p>
+            <p className="text-sm text-gray-200 leading-relaxed mb-4">{rec.primary}</p>
+            <div className="flex items-start gap-2 bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-amber-400 flex-shrink-0 mt-0.5">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
+                <path d="M8 7v4M8 5.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              <p className="text-xs text-amber-400 leading-relaxed">{rec.note}</p>
+            </div>
+          </div>
+
+          {/* ── IOWA STAGE COMPARISON ── */}
+          {iowa && crackVisible && (
             <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">Prognosis Context</p>
-              <div className="grid grid-cols-3 gap-3">
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">Iowa Stage Reference</p>
+              <div className="grid grid-cols-4 gap-2">
                 {[
-                  { stage: "I",   rate: 93, label: "Stage I" },
-                  { stage: "II",  rate: 84, label: "Stage II" },
-                  { stage: "III", rate: 69, label: "Stage III" },
-                  { stage: "IV",  rate: 41, label: "Stage IV" },
-                  { stage: "V",   rate: 0,  label: "Stage V" },
+                  { stage: "I",   rate: 93, pct: "37% of cases" },
+                  { stage: "II",  rate: 84, pct: "39% of cases" },
+                  { stage: "III", rate: 69, pct: "15% of cases" },
+                  { stage: "IV",  rate: 41, pct: "8% of cases"  },
                 ].map(s => {
                   const isCurrent = s.stage === iowa.stage;
-                  const color = s.rate >= 80 ? "#10b981" : s.rate >= 60 ? "#f59e0b" : s.rate >= 40 ? "#f97316" : "#ef4444";
+                  const color = s.rate >= 80 ? "#10b981" : s.rate >= 65 ? "#f59e0b" : s.rate >= 50 ? "#f97316" : "#ef4444";
                   return (
                     <div key={s.stage} className={`rounded-xl p-3 text-center border transition-all ${
-                      isCurrent ? "border-white/30 bg-white/8 scale-105" : "border-white/5 bg-white/3"
+                      isCurrent ? "border-white/30 bg-white/8 scale-105 shadow-lg" : "border-white/5 bg-white/3"
                     }`}>
-                      <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">{s.label}</p>
-                      <p className="text-lg font-black" style={{ color }}>
-                        {s.rate > 0 ? s.rate + "%" : "⛔"}
-                      </p>
-                      {isCurrent && <p className="text-[8px] text-white/50 mt-0.5">← current</p>}
+                      <p className="text-[9px] text-gray-600 mb-1 uppercase tracking-wider">Stage {s.stage}</p>
+                      <p className="text-xl font-black" style={{ color }}>{s.rate}%</p>
+                      <p className="text-[9px] text-gray-600 mt-0.5">{s.pct}</p>
+                      {isCurrent && <p className="text-[8px] text-white/40 mt-0.5">← current</p>}
                     </div>
                   );
                 })}
               </div>
-              <p className="text-[10px] text-gray-600 mt-3 leading-relaxed">
-                Success rates from Krell & Caplan Iowa Classification system. Rates represent 1-year outcomes with appropriate treatment.
+              <p className="text-[10px] text-gray-600 mt-3">
+                1-year success rates for orthograde root canal treatment — Krell & Caplan, J Endod 2018 (n=363 cracked teeth).
               </p>
             </div>
           )}
@@ -444,18 +434,83 @@ export default function CrackClassifierResult() {
           {/* ── KEY FINDINGS ── */}
           {factors.length > 0 && (
             <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">Key Findings That Drove Classification</p>
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">Key Findings</p>
               <div className="space-y-2">
-                {factors.map((f: string, i: number) => <FactorRow key={i} factor={f} index={i} />)}
+                {factors.map((f: string, i: number) => <FactorRow key={i} factor={f} />)}
               </div>
             </div>
           )}
 
-          {/* ── PROBING DEPTH SUMMARY ── */}
+          {/* ── DERIVED PERIAPICAL DIAGNOSIS ── */}
+          {periDx && (
+            <div className={`bg-[#0d1a30] border rounded-2xl p-5 ${
+              periDx.isIowaStageIIITrigger ? "border-orange-500/25" : "border-white/10"
+            }`}>
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">
+                Auto-derived Periapical Diagnosis
+              </p>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className={`text-base font-bold mb-1 ${
+                    periDx.isIowaStageIIITrigger ? "text-orange-400" : "text-emerald-400"
+                  }`}>{periDx.label}</p>
+                  <p className="text-xs text-gray-500 leading-relaxed max-w-md">{periDx.derivationReason}</p>
+                </div>
+                <span className={`flex-shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full border ${
+                  periDx.isIowaStageIIITrigger
+                    ? "bg-orange-500/15 border-orange-500/30 text-orange-400"
+                    : "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                }`}>
+                  {periDx.isIowaStageIIITrigger ? "Iowa Stage III trigger ✓" : "Not a Stage III trigger"}
+                </span>
+              </div>
+              <div className="mt-3 pt-3 border-t border-white/8">
+                <p className="text-[10px] text-gray-600 leading-relaxed">
+                  Derived automatically from: percussion tenderness ({result.formData?.percussion === "1" ? "yes" : "no"}),
+                  apical lesion ({result.formData?.periLesion === "1" ? "yes" : "no"}),
+                  swelling ({result.formData?.swelling === "1" ? "yes" : "no"}),
+                  sinus tract ({result.formData?.sinus === "1" ? "yes" : "no"})
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── CRACK CONFIRMATION METHODS ── */}
+          {crackMethods && (
+            <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-3">Crack Confirmation Methods Used</p>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { key: "transillum", icon: "💡", label: "Transillumination" },
+                  { key: "methBlue",   icon: "🔵", label: "Methylene Blue Dye" },
+                  { key: "direct",     icon: "🔬", label: "Direct Visualization" },
+                ].map(m => {
+                  const used = crackMethods[m.key];
+                  return (
+                    <div key={m.key} className={`rounded-xl p-3 text-center border ${
+                      used
+                        ? "bg-emerald-500/10 border-emerald-500/25"
+                        : "bg-white/3 border-white/8"
+                    }`}>
+                      <p className="text-lg mb-1">{m.icon}</p>
+                      <p className={`text-[10px] font-bold ${used ? "text-emerald-400" : "text-gray-600"}`}>
+                        {m.label}
+                      </p>
+                      <p className={`text-[9px] mt-0.5 ${used ? "text-emerald-500" : "text-gray-700"}`}>
+                        {used ? "Confirmed" : "Not used"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+
           {sites.length > 0 && (
             <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">Probing Depth Map</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">Periodontal Probing Map</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
                 {sites.map((s: any) => {
                   const color = LEVEL_COLOR[s.level] ?? "#64748b";
                   return (
@@ -470,7 +525,7 @@ export default function CrackClassifierResult() {
                   );
                 })}
               </div>
-              <div className="grid grid-cols-3 gap-3 mt-3">
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Normal",     count: sites.filter((s:any) => s.level === "normal").length,     color: "#10b981" },
                   { label: "Attachment", count: sites.filter((s:any) => s.level === "attachment").length, color: "#f59e0b" },
@@ -486,7 +541,31 @@ export default function CrackClassifierResult() {
             </div>
           )}
 
-          {/* ── ACTION BUTTONS ── */}
+          {/* ── SUPPORTING SYMPTOMS (context only) ── */}
+          {(() => {
+            if (!result.formData) return null;
+            const f = result.formData;
+            const symps = ([
+              f.painBiting     === "1" ? "Pain on biting / chewing"       : null,
+              f.sharpCold      === "1" ? "Sharp pain to cold / sweet"      : null,
+              f.spontLingering === "1" ? "Spontaneous or lingering pain"   : null,
+              f.biteTest       === "1" ? "Positive bite test"              : null,
+            ] as (string | null)[]).filter((s): s is string => s !== null);
+            if (symps.length === 0) return null;
+            return (
+              <div className="bg-[#0d1a30] border border-white/10 rounded-2xl p-5">
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Reported Symptoms</p>
+                <p className="text-[10px] text-gray-600 mb-3">Recorded for clinical context — not used in Iowa staging (per Krell & Caplan)</p>
+                <div className="flex flex-wrap gap-2">
+                  {symps.map((s, i) => (
+                    <span key={i} className="text-[10px] bg-white/5 border border-white/10 px-3 py-1 rounded-full text-gray-400">{s}</span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── ACTIONS ── */}
           <div className="grid md:grid-cols-2 gap-4">
             {user && (
               <button onClick={() => setShowSaveModal(true)}
@@ -509,7 +588,7 @@ export default function CrackClassifierResult() {
           </div>
 
           <p className="text-center text-xs text-gray-600 leading-relaxed">
-            ⚠️ Clinical decision support only. Always apply professional judgment.
+            Based on Krell & Caplan Iowa Staging Index (J Endod 2018) · Clinical decision support only · Always apply professional judgment
           </p>
         </div>
 
@@ -557,9 +636,8 @@ export default function CrackClassifierResult() {
           </div>
         )}
 
-        {/* Footer */}
-        <div className="border-t border-white/8 bg-black/40 py-6 text-center text-sm text-gray-600 mt-10">
-          <p className="text-xs">© 2026 Endoprognosis · All Rights Reserved</p>
+        <div className="border-t border-white/8 bg-black/40 py-6 text-center mt-10">
+          <p className="text-xs text-gray-600">© 2026 Endoprognosis · All Rights Reserved</p>
         </div>
       </div>
     </ProtectedRoute>
