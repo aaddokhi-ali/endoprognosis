@@ -1,6 +1,6 @@
 // app/login/page.tsx
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
@@ -63,10 +63,23 @@ function Spinner({ dark }: { dark?: boolean }) {
   );
 }
 
-// ══════════════════════════════════════════════
-// MAIN PAGE
-// ══════════════════════════════════════════════
+// ── Suspense wrapper — required by Next.js for useSearchParams ──
 export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full border-2 border-[#10b981]/30 border-t-[#10b981] animate-spin" />
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+// ══════════════════════════════════════════════
+// MAIN CONTENT
+// ══════════════════════════════════════════════
+function LoginContent() {
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
