@@ -291,12 +291,12 @@ export default function EndodonticPrognosisPredictor() {
   const [formData, setFormData] = useState({
     casePresentation: "3",
     toothNumber: "",
-    ageGroup: "26-40 years",    // kept for research + VPT note
+    ageGroup: "26-40 years",
     gender: "Male",
     oralHygiene: "0",
     perio: "0",
     medical: "0",
-    medications: "0",           // kept for records + surgical flag only
+    medications: "0",
     needHelpDiagnosis: "yes",
     painCold: "no",
     painHot: "no",
@@ -396,7 +396,6 @@ export default function EndodonticPrognosisPredictor() {
       const toothType   = isAnterior ? "Anterior" : isPremolar ? "Premolar" : "Molar";
 
       // ── RECALIBRATED BASELINE (literature) ──
-      // Best case: 92% (no lesion), 87% (with lesion)
       let survival = lesion ? 87 : 92;
 
       // ── Perio deduction ──
@@ -405,7 +404,7 @@ export default function EndodonticPrognosisPredictor() {
       let perioMultiplier = oralHygiene === 1 ? 1.5 : oralHygiene === 2 ? 2 : 1;
       const adjustedPerio = Math.min(10, Math.round(basePerio * perioMultiplier));
 
-      // ── Medical deduction (ASA only — no medications penalty) ──
+      // ── Medical deduction ──
       const medical = parseInt(formData.medical) || 0;
 
       // ── Endo complexity ──
@@ -414,7 +413,7 @@ export default function EndodonticPrognosisPredictor() {
       // ── Prostho context ──
       const context = parseInt(formData.prostho) || 0;
 
-      // ── Structure deduction (from recalibrated wall system) ──
+      // ── Structure deduction ──
       const missingPercent = 100 - remainingPercent;
       const structurePenalty = missingPercent > 70 ? 12
         : missingPercent > 50 ? 8
@@ -472,14 +471,41 @@ export default function EndodonticPrognosisPredictor() {
       }
       affectingFactors.push(structureText);
 
-      if (lesion)          affectingFactors.push("Presence of periapical lesion");
-      if (basePerio >= 3)  affectingFactors.push("Advanced periodontal disease");
+      if (lesion) affectingFactors.push("Presence of periapical lesion");
+
+      // ── FIX 3: Periodontal + oral hygiene combined factor ──
+      // Covers every perio state that affects the score, and reflects
+      // the oral hygiene amplifier when both are present.
+      if (basePerio >= 1 || oralHygiene >= 1) {
+        if (basePerio >= 6) {
+          affectingFactors.push(
+            oralHygiene >= 1
+              ? "Advanced periodontal disease with poor oral hygiene — significantly compounded risk"
+              : "Advanced periodontal disease"
+          );
+        } else if (basePerio === 3) {
+          affectingFactors.push(
+            oralHygiene >= 1
+              ? "Moderate periodontitis compounded by poor oral hygiene"
+              : "Initial to moderate periodontitis"
+          );
+        } else if (basePerio === 1) {
+          affectingFactors.push(
+            oralHygiene >= 1
+              ? "Gingivitis with poor oral hygiene — elevated long-term risk"
+              : "Gingivitis — mild periodontal involvement"
+          );
+        } else {
+          // oralHygiene >= 1 but perio is healthy
+          affectingFactors.push("Non-compliance with oral hygiene measures");
+        }
+      }
+
       if (medical >= 1)    affectingFactors.push("Medical compromise (ASA II or higher)");
       if (endo >= 2)       affectingFactors.push("High endodontic complexity");
       if (formData.instrumentSep === "yes") affectingFactors.push("Instrument separation");
       if (formData.perforation   === "yes") affectingFactors.push("Root perforation");
       if (context >= 1)    affectingFactors.push("Prosthodontic complexity");
-      if (oralHygiene >= 1) affectingFactors.push("Non-compliance with oral hygiene measures");
 
       const finalFactors = affectingFactors.slice(0, 6);
 
@@ -491,7 +517,7 @@ export default function EndodonticPrognosisPredictor() {
            : "Root Canal Treatment")
         : "";
 
-      // ── VPT age note (age only affects VPT commentary) ──
+      // ── VPT age note ──
       let vptAgeNote = "";
       if (treatmentRec === "Vital Pulp Therapy") {
         const ageGroup = formData.ageGroup;

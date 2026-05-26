@@ -24,3 +24,17 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ── Fix: select option background and text color ──────────────────
+   Browser-native <option> elements ignore most CSS on Windows/macOS.
+   Setting background + color on the option element is the only
+   reliable cross-browser fix — covers every select in the app.     */
+select option {
+  background-color: #06080f;
+  color: #ffffff;
+}
+
+/* Fallback for browsers that render the select widget natively */
+select {
+  color-scheme: dark;
+}

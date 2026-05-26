@@ -1,7 +1,7 @@
 // app/predictor/result/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
@@ -12,6 +12,8 @@ import {
 import { db } from "../../firebaseConfig";
 import Navigation from "../../components/navigation";
 import ProtectedRoute from "../../components/protectedroute";
+import GuestLimitModal from "../../components/GuestLimitModal";
+import { useGuestUsage } from "../../hooks/useGuestUsage";
 
 // ── DPI SCALE ──
 function getDPILabel(dpi: number): { label: string; color: string; bg: string; border: string; desc: string } {
@@ -44,12 +46,10 @@ function SurvivalGauge({ value }: { value: number }) {
   return (
     <div className="relative flex items-center justify-center" style={{ width: 160, height: 160 }}>
       <svg width="160" height="160" viewBox="0 0 160 160">
-        {/* Track */}
         <circle cx="80" cy="80" r={r} fill="none" stroke="rgba(255,255,255,0.06)"
           strokeWidth="10" strokeDasharray={`${circ * 0.75} ${circ}`}
           strokeDashoffset={0} strokeLinecap="round"
           transform={`rotate(${rotation} 80 80)`} />
-        {/* Fill */}
         <circle cx="80" cy="80" r={r} fill="none" stroke={color}
           strokeWidth="10" strokeDasharray={`${dash} ${gap + circ * 0.25}`}
           strokeDashoffset={0} strokeLinecap="round"
@@ -87,7 +87,6 @@ function DPIGauge({ value }: { value: number }) {
           {cfg.label} Complexity
         </span>
       </div>
-      {/* Bar */}
       <div className="relative h-3 rounded-full bg-white/8 overflow-hidden mb-2">
         <div className="absolute inset-0 flex">
           {segments.map((s, i) => (
@@ -111,6 +110,7 @@ function DPIGauge({ value }: { value: number }) {
 export default function PredictorResult() {
   const [result, setResult]               = useState<any>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
   const [caseName, setCaseName]           = useState("");
   const [phoneNumber, setPhoneNumber]     = useState("");
   const [furtherNote, setFurtherNote]     = useState("");
@@ -119,30 +119,64 @@ export default function PredictorResult() {
   const [saveSuccess, setSaveSuccess]     = useState(false);
 
   const { user, loading: authLoading } = useAuth();
+  const { checkUsage } = useGuestUsage();
   const router = useRouter();
+
+  // ── FIX 2: Ref guard — ensures checkUsage() fires exactly once ──
+  // Without this, the useEffect re-runs each time authLoading flips,
+  // causing multiple server hits and unpredictable counter increments.
+  const usageChecked = useRef(false);
 
   // ── Load from localStorage ──
   useEffect(() => {
     const savedResult = localStorage.getItem("lastCalculationResult");
-    if (savedResult) {
-      try {
-        const parsed = JSON.parse(savedResult);
-        let factors = Array.isArray(parsed.affectingFactors) ? [...parsed.affectingFactors] : [];
-        factors = factors.filter(
-          (f) => !f.includes("Compromised coronal structure") && !f.includes("Remaining coronal structure")
-        );
-        const structFactor = factors.find(
-          (f) => f.includes("% loss") || f.includes("Adequate remaining")
-        );
-        if (structFactor) factors = [structFactor, ...factors.filter((f) => f !== structFactor)];
-        setResult({ ...parsed, affectingFactors: factors.slice(0, 6) });
-      } catch (e) {
-        router.push("/predictor");
-      }
-    } else {
+    if (!savedResult) {
+      router.push("/predictor");
+      return;
+    }
+
+    // Wait until auth state has fully resolved before deciding guest vs user
+    if (authLoading) return;
+
+    // Guard: only run the usage check once per page load
+    if (usageChecked.current) return;
+    usageChecked.current = true;
+
+    try {
+      const parsed = JSON.parse(savedResult);
+      let factors = Array.isArray(parsed.affectingFactors) ? [...parsed.affectingFactors] : [];
+      factors = factors.filter(
+        (f) => !f.includes("Compromised coronal structure") && !f.includes("Remaining coronal structure")
+      );
+      const structFactor = factors.find(
+        (f) => f.includes("% loss") || f.includes("Adequate remaining")
+      );
+      if (structFactor) factors = [structFactor, ...factors.filter((f) => f !== structFactor)];
+      const cleanedResult = { ...parsed, affectingFactors: factors.slice(0, 6) };
+
+      const runCheck = async () => {
+        // Logged-in user — skip guest check entirely
+        if (user) {
+          setResult(cleanedResult);
+          return;
+        }
+
+        // Guest — check and increment server counter
+        const allowed = await checkUsage();
+        if (!allowed) {
+          setShowLimitModal(true);
+        } else {
+          setResult(cleanedResult);
+        }
+      };
+
+      runCheck();
+    } catch (e) {
       router.push("/predictor");
     }
-  }, [router]);
+  // authLoading in deps so the effect re-runs once auth resolves,
+  // but usageChecked.current prevents double-firing
+  }, [router, user, authLoading]);
 
   // ── Navigation ──
   const goBackToPredictor = () => router.push("/predictor");
@@ -247,7 +281,6 @@ export default function PredictorResult() {
       const html2pdf = html2pdfModule.default || html2pdfModule;
       const dpiCfg = getDPILabel(result.totalDPI || 0);
 
-      // Pre-compute all PDF values — avoids nested template literals
       const pdfThreshold   = ["11","12","13","21","22","23","31","32","33","41","42","43"].includes(result.toothNumber) ? 55
                            : ["14","15","24","25","34","35","44","45"].includes(result.toothNumber) ? 60 : 65;
       const pdfVerdict     = result.isPractical ? "Practical to Retain" : "Impractical to Retain";
@@ -284,12 +317,10 @@ export default function PredictorResult() {
         '<h1 style="font-size:32px;font-weight:900;color:#10b981;margin-bottom:4px;">Endoprognosis</h1>',
         '<p style="color:#64748b;font-size:13px;letter-spacing:3px;text-transform:uppercase;">Prediction Result Report</p>',
         '</div>',
-
         '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:20px;">',
         '<p style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Clinical Summary</p>',
         '<p style="font-size:14px;line-height:1.8;">' + pdfIntro + '</p>',
         '</div>',
-
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">',
         '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:24px;text-align:center;">',
         '<p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">4-Year Survival</p>',
@@ -300,27 +331,20 @@ export default function PredictorResult() {
         '<p style="font-size:52px;font-weight:900;color:#3b82f6;">' + pdfDpi + '</p>',
         '<p style="color:#64748b;font-size:12px;">' + pdfDpiLabel + ' Complexity</p>',
         '</div></div>',
-
         '<div style="background:' + pdfVerdictBg + ';border:3px solid ' + pdfVerdictBord + ';border-radius:16px;padding:20px;text-align:center;margin-bottom:20px;">',
         '<p style="font-size:24px;font-weight:900;color:' + pdfVerdictCol + ';">' + pdfVerdict + '</p>',
         '<p style="color:#94a3b8;font-size:13px;margin-top:6px;">Threshold: ' + pdfThreshold + '% survival required for ' + pdfToothType + '</p>',
         '</div>',
-
         '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:20px;">',
         '<p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Diagnosis</p>',
         '<p style="font-size:16px;font-weight:600;">' + pdfPulpal + '</p>',
         '<p style="font-size:14px;color:#94a3b8;margin-top:4px;">' + pdfPeri + '</p>',
         pdfTreatment,
         '</div>',
-
         pdfFactors ? '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:20px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Factors Affecting Survivability</p><ul style="list-style:none;padding:0;margin:0;">' + pdfFactors + '</ul></div>' : '',
-
         pdfWalls ? '<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:20px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Coronal Structure (' + pdfRemaining + '% remaining)</p><ul style="list-style:none;padding:0;margin:0;">' + pdfWalls + '</ul><p style="margin-top:10px;font-size:13px;color:#94a3b8;">' + pdfFerrule + '</p></div>' : '',
-
         pdfVptNote ? '<div style="background:#0c1a0c;border:1px solid #166534;border-radius:12px;padding:16px;margin-bottom:16px;"><p style="font-size:13px;color:#86efac;">Info: ' + pdfVptNote + '</p></div>' : '',
-
         pdfMedFlag ? '<div style="background:#1a1000;border:1px solid #78350f;border-radius:12px;padding:16px;margin-bottom:16px;"><p style="font-size:13px;color:#fbbf24;">Warning: ' + pdfMedFlag + '</p></div>' : '',
-
         '<div style="margin-top:24px;padding:16px;border:1px solid #334155;border-radius:12px;text-align:center;">',
         '<p style="color:#ef4444;font-size:12px;">This result is for clinical decision support only. Always apply your professional judgment.</p>',
         '</div>',
@@ -348,6 +372,11 @@ export default function PredictorResult() {
     }
   };
 
+  // ── Guest limit modal — shown before result loads ──
+  if (showLimitModal) {
+    return <GuestLimitModal />;
+  }
+
   // ── Loading ──
   if (!result) {
     return (
@@ -363,13 +392,13 @@ export default function PredictorResult() {
     );
   }
 
-  const survival    = result.survivalPercentage || 0;
+  const survival     = result.survivalPercentage || 0;
   const isRestorable = result.isPractical ?? false;
-  const dpiCfg      = getDPILabel(result.totalDPI || 0);
-  const toothNum    = result.toothNumber || "—";
-  const toothType   = result.toothType   || "Molar";
-  const threshold   = ["11","12","13","21","22","23","31","32","33","41","42","43"].includes(toothNum) ? 55
-                    : ["14","15","24","25","34","35","44","45"].includes(toothNum) ? 60 : 65;
+  const dpiCfg       = getDPILabel(result.totalDPI || 0);
+  const toothNum     = result.toothNumber || "—";
+  const toothType    = result.toothType   || "Molar";
+  const threshold    = ["11","12","13","21","22","23","31","32","33","41","42","43"].includes(toothNum) ? 55
+                     : ["14","15","24","25","34","35","44","45"].includes(toothNum) ? 60 : 65;
 
   return (
     <ProtectedRoute>
@@ -425,8 +454,6 @@ export default function PredictorResult() {
 
           {/* ── MAIN METRICS ROW ── */}
           <div className="grid md:grid-cols-2 gap-5">
-
-            {/* Survival gauge */}
             <div className="bg-[#0d1a30] border border-white/10 rounded-3xl p-6 flex flex-col items-center text-center">
               <p className="text-[10px] text-gray-500 tracking-[2px] uppercase mb-4">4-Year Survival Estimate</p>
               <SurvivalGauge value={survival} />
@@ -434,8 +461,6 @@ export default function PredictorResult() {
                 Dependent on quality of final restoration, oral hygiene compliance, and absence of parafunctional habits.
               </p>
             </div>
-
-            {/* DPI gauge */}
             <div className="bg-[#0d1a30] border border-white/10 rounded-3xl p-6 flex flex-col justify-between">
               <p className="text-[10px] text-gray-500 tracking-[2px] uppercase mb-4">EP Points (Dental Prognosis Index)</p>
               <DPIGauge value={result.totalDPI || 0} />
@@ -467,8 +492,6 @@ export default function PredictorResult() {
                 {toothType}
               </div>
             </div>
-
-            {/* Explanation note */}
             {result.explanationNote && (
               <p className="text-sm text-gray-400 mt-4 leading-relaxed border-t border-white/8 pt-4"
                 dangerouslySetInnerHTML={{ __html: result.explanationNote }} />
@@ -588,14 +611,31 @@ export default function PredictorResult() {
 
           {/* ── ACTION BUTTONS ── */}
           <div className="grid md:grid-cols-2 gap-4">
-            <button onClick={() => setShowSaveModal(true)}
-              className="flex items-center justify-center gap-2 bg-[#10b981] hover:bg-[#0ea76e] text-black font-bold py-4 rounded-2xl text-sm transition-all hover:-translate-y-0.5 shadow-lg shadow-[#10b981]/20">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M3 2h8l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1Z" stroke="currentColor" strokeWidth="1.4"/>
-                <path d="M5 2v4h6V2M5 9h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              </svg>
-              Save This Case
-            </button>
+            {/* FIX 1: Save button is disabled and shows a tooltip for guests */}
+            {user ? (
+              <button
+                onClick={() => setShowSaveModal(true)}
+                className="flex items-center justify-center gap-2 bg-[#10b981] hover:bg-[#0ea76e] text-black font-bold py-4 rounded-2xl text-sm transition-all hover:-translate-y-0.5 shadow-lg shadow-[#10b981]/20"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 2h8l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1Z" stroke="currentColor" strokeWidth="1.4"/>
+                  <path d="M5 2v4h6V2M5 9h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+                Save This Case
+              </button>
+            ) : (
+              <button
+                onClick={() => router.push("/login")}
+                className="flex items-center justify-center gap-2 bg-white/8 hover:bg-white/15 border border-white/20 text-gray-400 font-bold py-4 rounded-2xl text-sm transition-all"
+                title="Create a free account to save cases"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="3" y="7" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
+                  <path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+                Sign In to Save Case
+              </button>
+            )}
             <button onClick={exportAsPDF} disabled={isGeneratingPDF}
               className="flex items-center justify-center gap-2 bg-white/8 hover:bg-white/15 border border-white/15 font-semibold py-4 rounded-2xl text-sm transition-all disabled:opacity-50">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
