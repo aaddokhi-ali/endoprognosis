@@ -17,7 +17,6 @@ export default function Navigation() {
     setIsGuest(guestFlag);
   }, [pathname]);
 
-  // Additional effect to sync with auth state changes
   useEffect(() => {
     if (user) {
       const guestFlag = localStorage.getItem("isGuest") === "true";
@@ -30,246 +29,227 @@ export default function Navigation() {
   }, [user]);
 
   const isLoginPage = pathname === "/login";
+  const effectiveIsGuest = isGuest && !user;
 
   const handleLogout = async () => {
     localStorage.removeItem("isGuest");
     localStorage.removeItem("guestMode");
+    setIsMobileMenuOpen(false);
     await logout();
   };
 
-  // Safety: Never treat a real logged-in user as guest
-  const effectiveIsGuest = isGuest && !user;
-
   if (isLoginPage) return null;
+
+  // ── Tool links (always visible) ──
+  const publicTools = [
+    { href: "/predictor", label: "Prognosis Predictor" },
+    { href: "/crack-classifier", label: "Crack Tooth Classifier" },
+  ];
+
+  // ── Tool links (logged-in only) ──
+  const privateTools = [
+    { href: "/dental-trauma-center", label: "Dental Trauma Center" },
+    { href: "/trauma-cases", label: "Trauma Cases" },
+    { href: "/mycases", label: "My Cases" },
+    { href: "/profit-tracker", label: "Profit Tracker" },
+  ];
+
+  const isActive = (href: string) =>
+    href === "/home" || href === "/guest"
+      ? pathname === "/home" || pathname === "/guest"
+      : pathname.startsWith(href);
 
   return (
     <>
-      {/* ====================== TOP NAVIGATION ====================== */}
-      <nav className="sticky top-0 z-50 bg-black/90 backdrop-blur-lg border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          
-          {/* Logo */}
-          <Link href={effectiveIsGuest ? "/guest" : "/home"} className="flex items-center flex-shrink-0">
-            <Image
-              src="https://iili.io/B6RcxlS.png"
-              alt="Endoprognosis Logo"
-              width={200}
-              height={70}
-              className="h-12 w-auto"
-              priority
-            />
-          </Link>
+      {/* ══════════════════════ TOP NAV ══════════════════════ */}
+      <nav className="sticky top-0 z-50 bg-[#050d1a]/95 backdrop-blur-lg border-b border-white/8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-16">
 
-          {/* Desktop Menu */}
-          <div className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-medium">
-            <Link 
-              href="/predictor" 
-              className={`hover:text-[#10b981] transition-colors ${pathname.includes("/predictor") ? "text-[#10b981] font-semibold" : ""}`}
+            {/* Logo */}
+            <Link
+              href={effectiveIsGuest ? "/guest" : "/home"}
+              className="flex items-center flex-shrink-0 mr-6"
             >
-              Endodontic Prognosis Predictor (EPP)
-            </Link>
-            
-            <Link 
-              href="/crack-classifier" 
-              className={`hover:text-[#10b981] transition-colors ${pathname.includes("/crack-classifier") ? "text-[#10b981] font-semibold" : ""}`}
-            >
-              Crack Tooth Classifier (CTC)
+              <Image
+                src="https://iili.io/B6RcxlS.png"
+                alt="Endoprognosis Logo"
+                width={180}
+                height={60}
+                className="h-10 w-auto"
+                priority
+              />
             </Link>
 
-            {/* Dental Trauma Center - Only for logged-in users */}
-            {!effectiveIsGuest && user && (
-              <Link 
-                href="/dental-trauma-center" 
-                className={`hover:text-[#10b981] transition-colors ${pathname.includes("/dental-trauma-center") ? "text-[#10b981] font-semibold" : ""}`}
-              >
-                Dental Trauma Center
-              </Link>
-            )}
+            {/* ── Desktop nav ── */}
+            <div className="hidden md:flex items-center gap-1 flex-1">
 
-            {/* Trauma Cases - Only for logged-in users */}
-            {!effectiveIsGuest && user && (
-              <Link 
-                href="/trauma-cases" 
-                className={`hover:text-[#10b981] transition-colors ${pathname === "/trauma-cases" ? "text-[#10b981] font-semibold" : ""}`}
-              >
-                Trauma Cases
-              </Link>
-            )}
+              {/* Public tool links */}
+              <div className="flex items-center gap-1">
+                {publicTools.map((t) => (
+                  <NavLink key={t.href} href={t.href} active={isActive(t.href)} tool>
+                    {t.label}
+                  </NavLink>
+                ))}
+              </div>
 
-            {/* My Cases - Only for logged-in users */}
-            {!effectiveIsGuest && user && (
-              <Link 
-                href="/mycases" 
-                className={`hover:text-[#10b981] transition-colors ${pathname === "/mycases" ? "text-[#10b981] font-semibold" : ""}`}
-              >
-                My Cases
-              </Link>
-            )}
-
-            {/* Profit Tracker - Only for logged-in users */}
-            {!effectiveIsGuest && user && (
-              <Link 
-                href="/profit-tracker" 
-                className={`hover:text-[#10b981] transition-colors ${pathname === "/profit-tracker" ? "text-[#10b981] font-semibold" : ""}`}
-              >
-                💰 Profit Tracker
-              </Link>
-            )}
-
-            <Link 
-              href={effectiveIsGuest ? "/guest" : "/home"} 
-              className={`hover:text-[#10b981] transition-colors ${(pathname === "/home" || pathname === "/guest") ? "text-[#10b981] font-semibold" : ""}`}
-            >
-              Home
-            </Link>
-
-            {/* Logout - Only for real logged-in users */}
-            {user && (
-              <button
-                onClick={handleLogout}
-                className="text-red-400 hover:text-red-500 transition-colors font-medium"
-              >
-                Logout
-              </button>
-            )}
-
-            {/* Sign Up - Only show for guests */}
-            {effectiveIsGuest && (
-              <Link 
-                href="/login" 
-                className="bg-amber-400 hover:bg-amber-300 text-black px-5 py-2 rounded-xl font-semibold transition"
-              >
-                Sign Up
-              </Link>
-            )}   
-
-            {/* Login Button - Show when user is not logged in and not in guest mode */}
-            {!user && !effectiveIsGuest && (
-              <Link 
-                href="/login" 
-                className="bg-[#10b981] hover:bg-[#0ea76e] text-black px-5 py-2 rounded-xl font-semibold transition"
-              >
-                Login
-              </Link>
-            )}
-          </div>
-
-          {/* Mobile Hamburger Button */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden w-10 h-10 flex items-center justify-center text-white"
-            aria-label="Toggle mobile menu"
-          >
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              className="w-6 h-6" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              {isMobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6h12v12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              {/* Private tool links */}
+              {!effectiveIsGuest && user && (
+                <>
+                  {/* Divider */}
+                  <div className="w-px h-5 bg-white/15 mx-2" />
+                  <div className="flex items-center gap-1">
+                    {privateTools.map((t) => (
+                      <NavLink key={t.href} href={t.href} active={isActive(t.href)} tool>
+                        {t.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                </>
               )}
-            </svg>
-          </button>
+
+              {/* Spacer */}
+              <div className="flex-1" />
+
+              {/* Utility links */}
+              <div className="flex items-center gap-1">
+                <NavLink
+                  href={effectiveIsGuest ? "/guest" : "/home"}
+                  active={isActive(effectiveIsGuest ? "/guest" : "/home")}
+                >
+                  Home
+                </NavLink>
+
+                {user && (
+                  <button
+                    onClick={handleLogout}
+                    className="px-3 py-1.5 rounded-lg text-[13px] font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all duration-150"
+                  >
+                    Logout
+                  </button>
+                )}
+
+                {effectiveIsGuest && (
+                  <Link
+                    href="/login"
+                    className="ml-2 bg-amber-400 hover:bg-amber-300 text-black px-4 py-1.5 rounded-lg text-[13px] font-semibold transition"
+                  >
+                    Sign Up
+                  </Link>
+                )}
+
+                {!user && !effectiveIsGuest && (
+                  <Link
+                    href="/login"
+                    className="ml-2 bg-[#10b981] hover:bg-[#0ea76e] text-black px-4 py-1.5 rounded-lg text-[13px] font-semibold transition"
+                  >
+                    Login
+                  </Link>
+                )}
+              </div>
+            </div>
+
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="md:hidden w-10 h-10 flex items-center justify-center text-white hover:text-[#10b981] transition-colors"
+              aria-label="Toggle mobile menu"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-6 h-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                {isMobileMenuOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* ── Mobile menu ── */}
         {isMobileMenuOpen && (
-          <div className="md:hidden bg-black/95 backdrop-blur-lg border-t border-white/10 py-6">
-            <div className="max-w-7xl mx-auto px-6 flex flex-col gap-5 text-base">
-              <Link 
-                href="/predictor" 
-                className={`hover:text-[#10b981] transition-colors py-2 ${pathname.includes("/predictor") ? "text-[#10b981] font-semibold" : ""}`}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                Endodontic Prognosis Predictor (EPP)
-              </Link>
-              
-              <Link 
-                href="/crack-classifier" 
-                className={`hover:text-[#10b981] transition-colors py-2 ${pathname.includes("/crack-classifier") ? "text-[#10b981] font-semibold" : ""}`}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                Crack Tooth Classifier (CTC)
-              </Link>
+          <div className="md:hidden bg-[#050d1a]/98 backdrop-blur-lg border-t border-white/8">
+            <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col gap-1">
+
+              {/* Tools label */}
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500 px-3 mb-1">
+                Clinical Tools
+              </p>
+
+              {publicTools.map((t) => (
+                <MobileNavLink
+                  key={t.href}
+                  href={t.href}
+                  active={isActive(t.href)}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  tool
+                >
+                  {t.label}
+                </MobileNavLink>
+              ))}
 
               {!effectiveIsGuest && user && (
-                <Link 
-                  href="/dental-trauma-center" 
-                  className={`hover:text-[#10b981] transition-colors py-2 ${pathname.includes("/dental-trauma-center") ? "text-[#10b981] font-semibold" : ""}`}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Dental Trauma Center
-                </Link>
+                <>
+                  {privateTools.map((t) => (
+                    <MobileNavLink
+                      key={t.href}
+                      href={t.href}
+                      active={isActive(t.href)}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      tool
+                    >
+                      {t.label}
+                    </MobileNavLink>
+                  ))}
+                </>
               )}
 
-              {!effectiveIsGuest && user && (
-                <Link 
-                  href="/trauma-cases" 
-                  className={`hover:text-[#10b981] transition-colors py-2 ${pathname === "/trauma-cases" ? "text-[#10b981] font-semibold" : ""}`}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Trauma Cases
-                </Link>
-              )}
+              {/* Divider */}
+              <div className="h-px bg-white/10 my-3" />
 
-              {!effectiveIsGuest && user && (
-                <Link 
-                  href="/mycases" 
-                  className={`hover:text-[#10b981] transition-colors py-2 ${pathname === "/mycases" ? "text-[#10b981] font-semibold" : ""}`}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  My Cases
-                </Link>
-              )}
+              {/* Utility label */}
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500 px-3 mb-1">
+                Navigation
+              </p>
 
-              {!effectiveIsGuest && user && (
-                <Link 
-                  href="/profit-tracker" 
-                  className={`hover:text-[#10b981] transition-colors py-2 ${pathname === "/profit-tracker" ? "text-[#10b981] font-semibold" : ""}`}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  💰 Profit Tracker
-                </Link>
-              )}
-
-              <Link 
-                href={effectiveIsGuest ? "/guest" : "/home"} 
-                className={`hover:text-[#10b981] transition-colors py-2 ${(pathname === "/home" || pathname === "/guest") ? "text-[#10b981] font-semibold" : ""}`}
+              <MobileNavLink
+                href={effectiveIsGuest ? "/guest" : "/home"}
+                active={isActive(effectiveIsGuest ? "/guest" : "/home")}
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 Home
-              </Link>
+              </MobileNavLink>
 
               {user && (
                 <button
-                  onClick={() => {
-                    handleLogout();
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="text-red-400 hover:text-red-500 transition-colors font-medium py-2 text-left"
+                  onClick={handleLogout}
+                  className="text-left px-3 py-2.5 rounded-lg text-[14px] font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all"
                 >
                   Logout
                 </button>
               )}
 
               {effectiveIsGuest && (
-                <Link 
-                  href="/login" 
-                  className="bg-amber-400 hover:bg-amber-300 text-black px-5 py-3 rounded-xl font-semibold transition text-center"
+                <Link
+                  href="/login"
+                  className="mt-2 bg-amber-400 hover:bg-amber-300 text-black px-5 py-3 rounded-xl font-semibold transition text-center text-sm"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Sign Up
                 </Link>
-              )}   
+              )}
 
               {!user && !effectiveIsGuest && (
-                <Link 
-                  href="/login" 
-                  className="bg-[#10b981] hover:bg-[#0ea76e] text-black px-5 py-3 rounded-xl font-semibold transition text-center"
+                <Link
+                  href="/login"
+                  className="mt-2 bg-[#10b981] hover:bg-[#0ea76e] text-black px-5 py-3 rounded-xl font-semibold transition text-center text-sm"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Login
@@ -280,20 +260,93 @@ export default function Navigation() {
         )}
       </nav>
 
-      {/* ====================== BOTTOM NAVIGATION ====================== */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-lg border-t border-white/10 py-4 md:hidden">
+      {/* ══════════════════════ BOTTOM NAV (mobile only) ══════════════════════ */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#050d1a]/95 backdrop-blur-lg border-t border-white/8 py-3 md:hidden">
         <div className="max-w-7xl mx-auto px-6 flex justify-center">
-          <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-5 text-[12px] font-medium text-gray-400">
             <Link href="/about" className="hover:text-[#10b981] transition-colors">About</Link>
             <Link href="/references" className="hover:text-[#10b981] transition-colors">References</Link>
             <Link href="/how-to-use" className="hover:text-[#10b981] transition-colors">How to Use</Link>
-            <Link href="/contact" className="hover:text-white transition-colors">Contact Us</Link>
+            <Link href="/contact" className="hover:text-[#10b981] transition-colors">Contact</Link>
           </div>
         </div>
       </nav>
 
-      {/* Spacer for fixed bottom nav - only on mobile */}
-      <div className="h-20 md:hidden"></div>
+      {/* Spacer for fixed bottom nav */}
+      <div className="h-16 md:hidden" />
     </>
+  );
+}
+
+/* ── Desktop NavLink ── */
+function NavLink({
+  href,
+  active,
+  tool,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  tool?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`
+        relative px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150
+        ${active
+          ? tool
+            ? "text-[#10b981] bg-[#10b981]/10"
+            : "text-white bg-white/8"
+          : tool
+            ? "text-gray-300 hover:text-[#10b981] hover:bg-[#10b981]/8"
+            : "text-gray-400 hover:text-white hover:bg-white/6"
+        }
+      `}
+    >
+      {tool && active && (
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-[#10b981] rounded-full" />
+      )}
+      <span className={tool && active ? "pl-1.5" : ""}>{children}</span>
+    </Link>
+  );
+}
+
+/* ── Mobile NavLink ── */
+function MobileNavLink({
+  href,
+  active,
+  tool,
+  onClick,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  tool?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`
+        flex items-center gap-3 px-3 py-2.5 rounded-lg text-[14px] font-medium transition-all duration-150
+        ${active
+          ? tool
+            ? "text-[#10b981] bg-[#10b981]/10"
+            : "text-white bg-white/8"
+          : tool
+            ? "text-gray-300 hover:text-[#10b981] hover:bg-[#10b981]/8"
+            : "text-gray-400 hover:text-white hover:bg-white/6"
+        }
+      `}
+    >
+      {tool && (
+        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${active ? "bg-[#10b981]" : "bg-white/20"}`} />
+      )}
+      {children}
+    </Link>
   );
 }
