@@ -846,44 +846,43 @@ export default function PatientsPage() {
             </div>
           )}
 
-          {/* ════════════════════════════════
-              STEP 5 — SUCCESS
-          ════════════════════════════════ */}
-          {step === 5 && (
-            <div className="text-center py-12">
-              <div className="w-20 h-20 rounded-full bg-[#081a10] border-2 border-emerald-500 flex items-center justify-center mx-auto mb-6">
-                <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-                  <path d="M8 18L15 25L28 11" stroke="#4ab87a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <h2
-                className="text-3xl font-bold bg-gradient-to-r from-[#f5d76e] via-[#f0c14d] to-[#d4af37] bg-clip-text text-transparent mb-3"
-                style={{ fontFamily: "Playfair Display, serif" }}
-              >
-                {t("You're all set!", "تم بنجاح!")}
-              </h2>
-              <p className="text-gray-400 text-sm max-w-sm mx-auto leading-relaxed mb-8">
-                {submitted
-                  ? t("Your information has been received. A trusted dentist in your area will reach out to you shortly.", "تم استلام معلوماتك. سيتواصل معك طبيب أسنان موثوق في منطقتك قريباً.")
-                  : t("Thank you for completing the assessment. We hope this was helpful.", "شكراً لإتمام التقييم. نأمل أن يكون ذلك مفيداً لك.")}
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <button
-                  onClick={resetAll}
-                  className="bg-[#f5d76e] hover:bg-[#ffe180] text-[#050d1f] font-semibold px-8 py-3 rounded-full transition-all hover:-translate-y-0.5 shadow-lg shadow-[#f5d76e]/20 text-sm"
-                >
-                  {t("Start a new assessment", "بدء تقييم جديد")}
-                </button>
-                <button
-                  onClick={() => router.push("/patients")}
-                  className="text-gray-400 hover:text-gray-200 border border-[#1e2e4a] hover:border-gray-600 px-8 py-3 rounded-full text-sm transition-all"
-                >
-                  {t("Back to Home", "العودة للرئيسية")}
-                </button>
-              </div>
-            </div>
-          )}
-
+         {/* ════════════════════════════════
+    STEP 5 — SUCCESS
+════════════════════════════════ */}
+{step === 5 && (
+  <div className="text-center py-12">
+    <div className="w-20 h-20 rounded-full bg-[#081a10] border-2 border-emerald-500 flex items-center justify-center mx-auto mb-6">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+        <path d="M8 18L15 25L28 11" stroke="#4ab87a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+    <h2
+      className="text-3xl font-bold bg-gradient-to-r from-[#f5d76e] via-[#f0c14d] to-[#d4af37] bg-clip-text text-transparent mb-3"
+      style={{ fontFamily: "Playfair Display, serif" }}
+    >
+      {t("You're all set!", "تم بنجاح!")}
+    </h2>
+    <p className="text-gray-400 text-sm max-w-sm mx-auto leading-relaxed mb-8">
+      {submitted
+        ? t("Your information has been received. A trusted dentist in your area will reach out to you shortly.", "تم استلام معلوماتك. سيتواصل معك طبيب أسنان موثوق في منطقتك قريباً.")
+        : t("Thank you for completing the assessment. We hope this was helpful.", "شكراً لإتمام التقييم. نأمل أن يكون ذلك مفيداً لك.")}
+    </p>
+    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+      <button
+        onClick={resetAll}
+        className="bg-[#f5d76e] hover:bg-[#ffe180] text-[#050d1f] font-semibold px-8 py-3 rounded-full transition-all hover:-translate-y-0.5 shadow-lg shadow-[#f5d76e]/20 text-sm"
+      >
+        {t("Start a new assessment", "بدء تقييم جديد")}
+      </button>
+      <button
+        onClick={() => router.push("/")}
+        className="text-gray-400 hover:text-gray-200 border border-[#1e2e4a] hover:border-gray-600 px-8 py-3 rounded-full text-sm transition-all"
+      >
+        {t("Back to Home", "العودة للرئيسية")}
+      </button>
+    </div>
+  </div>
+)}
         </div>
       </main>
 
