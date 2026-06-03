@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   collection, query, where, orderBy,
   getDocs, doc, updateDoc, deleteDoc, startAfter, limit,
-  getCountFromServer,
+  getCountFromServer, getDoc,
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { useAuth } from "../context/AuthContext";
@@ -46,6 +46,11 @@ interface SavedCase {
   createdAt: any;
 }
 
+interface ProfitSettings {
+  currency: "SAR" | "USD";
+  procedures: Record<string, { revenue: number; cost: number }>;
+}
+
 const PAGE_SIZE = 15;
 
 const STATUS_CONFIG: Record<TreatmentStatus, { label: string; bg: string; border: string; text: string; dot: string }> = {
@@ -61,6 +66,57 @@ const NEXT_STATUS: Record<TreatmentStatus, TreatmentStatus> = {
   "Done":         "Postpone",
   "Postpone":     "No Treatment",
 };
+
+// ── MAP treatmentRec → procedure key ──
+function mapTreatmentRecToProcKey(treatmentRec: string): string {
+  const rec = (treatmentRec || "").toLowerCase();
+  if (rec.includes("root canal treatment") || rec.includes("rct"))       return "rct";
+  if (rec.includes("retreatment") || rec.includes("rcret"))              return "rcret";
+  if (rec.includes("vital pulp") || rec.includes("vpt"))                 return "vpt";
+  if (rec.includes("microsurgery") || rec.includes("apico") || rec.includes("surgical")) return "apico";
+  return "other";
+}
+
+// ── APPLY PROFIT FIELDS when case is marked Done ──
+async function applyProfitFields(
+  userId: string,
+  caseId: string,
+  treatmentRec: string | undefined,
+  newStatus: TreatmentStatus
+): Promise<void> {
+  if (!treatmentRec) return;
+
+  try {
+    const settingsSnap = await getDoc(
+      doc(db, "users", userId, "settings", "profitSettings")
+    );
+    if (!settingsSnap.exists()) return;
+
+    const settings = settingsSnap.data() as ProfitSettings;
+    const procKey  = mapTreatmentRecToProcKey(treatmentRec);
+    const fees     = settings.procedures?.[procKey];
+    if (!fees) return;
+
+    const revenue = Number(fees.revenue) || 0;
+    const cost    = Number(fees.cost)    || 0;
+    const profit  = revenue - cost;
+
+    // For In-Progress we record 50% of profit; Done = full
+    const profitStatus = newStatus === "Done" ? "full" : "in-progress";
+    const recordedProfit = newStatus === "Done" ? profit : Math.round(profit * 0.5);
+
+    await updateDoc(doc(db, "cases", caseId), {
+      actualProcedure: procKey,
+      revenue,
+      cost,
+      profit:       recordedProfit,
+      profitStatus,
+      completedAt:  new Date(),
+    });
+  } catch (err) {
+    console.error("applyProfitFields failed:", err);
+  }
+}
 
 // ── SURVIVAL COLOR ──
 function survivalColor(v?: number): string {
@@ -83,10 +139,20 @@ function StatusBadge({ status }: { status: TreatmentStatus }) {
 
 // ── QUICK STATUS CYCLER ──
 function QuickStatusButton({
-  caseId, current, onUpdated,
-}: { caseId: string; current: TreatmentStatus; onUpdated: (id: string, next: TreatmentStatus) => void }) {
+  caseId,
+  current,
+  treatmentRec,
+  userId,
+  onUpdated,
+}: {
+  caseId: string;
+  current: TreatmentStatus;
+  treatmentRec?: string;
+  userId: string;
+  onUpdated: (id: string, next: TreatmentStatus) => void;
+}) {
   const [updating, setUpdating] = useState(false);
-  const next = NEXT_STATUS[current] ?? "No Treatment";
+  const next    = NEXT_STATUS[current] ?? "No Treatment";
   const nextCfg = STATUS_CONFIG[next];
 
   const handleClick = async (e: React.MouseEvent) => {
@@ -94,6 +160,12 @@ function QuickStatusButton({
     setUpdating(true);
     try {
       await updateDoc(doc(db, "cases", caseId), { treatmentStatus: next });
+
+      // Populate profit fields when moving to Done or In-Progress
+      if (next === "Done" || next === "In-Progress") {
+        await applyProfitFields(userId, caseId, treatmentRec, next);
+      }
+
       onUpdated(caseId, next);
     } catch (err) {
       console.error("Status update failed:", err);
@@ -143,17 +215,17 @@ function SkeletonCard() {
 // MAIN PAGE
 // ══════════════════════════════════════════════
 export default function MyCases() {
-  const [cases, setCases]           = useState<SavedCase[]>([]);
-  const [lastDoc, setLastDoc]       = useState<any>(null);
-  const [hasMore, setHasMore]       = useState(true);
-  const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [loading, setLoading]       = useState(true);
+  const [cases, setCases]             = useState<SavedCase[]>([]);
+  const [lastDoc, setLastDoc]         = useState<any>(null);
+  const [hasMore, setHasMore]         = useState(true);
+  const [totalCount, setTotalCount]   = useState<number | null>(null);
+  const [loading, setLoading]         = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [error, setError]             = useState<string | null>(null);
+  const [searchTerm, setSearchTerm]   = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [activeTab, setActiveTab]   = useState<ActiveTab>("All");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab]     = useState<ActiveTab>("All");
+  const [expandedId, setExpandedId]   = useState<string | null>(null);
 
   const { user } = useAuth();
   const router   = useRouter();
@@ -400,7 +472,7 @@ export default function MyCases() {
           {!loading && activeTab === "Crack Cases" && crackCases.length > 0 && (
             <div className="space-y-3">
               {crackCases.map(c => (
-                <CaseCard key={c.id} c={c} expanded={expandedId === c.id}
+                <CaseCard key={c.id} c={c} userId={user.uid} expanded={expandedId === c.id}
                   onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
                   onOpen={() => router.push(`/cases/${c.id}`)}
                   onStatusUpdated={handleStatusUpdated}
@@ -424,7 +496,7 @@ export default function MyCases() {
               </div>
               <div className="space-y-3">
                 {list.map(c => (
-                  <CaseCard key={c.id} c={c} expanded={expandedId === c.id}
+                  <CaseCard key={c.id} c={c} userId={user.uid} expanded={expandedId === c.id}
                     onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
                     onOpen={() => router.push(`/cases/${c.id}`)}
                     onStatusUpdated={handleStatusUpdated}
@@ -542,8 +614,9 @@ function EditableField({
 // ══════════════════════════════════════════════
 // CASE CARD COMPONENT
 // ══════════════════════════════════════════════
-function CaseCard({ c, expanded, onToggle, onOpen, onStatusUpdated, onDeleted, onFieldUpdated }: {
+function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDeleted, onFieldUpdated }: {
   c: SavedCase;
+  userId: string;
   expanded: boolean;
   onToggle: () => void;
   onOpen: () => void;
@@ -570,6 +643,24 @@ function CaseCard({ c, expanded, onToggle, onOpen, onStatusUpdated, onDeleted, o
 
   const handleSaved = (field: string, val: string) => {
     onFieldUpdated(c.id, { [field]: val } as Partial<SavedCase>);
+  };
+
+  // ── Inline status change (from expanded panel) ──
+  const handleInlineStatusChange = async (e: React.MouseEvent, s: TreatmentStatus) => {
+    e.stopPropagation();
+    if (c.treatmentStatus === s) return;
+    try {
+      await updateDoc(doc(db, "cases", c.id), { treatmentStatus: s });
+
+      // Populate profit fields when moving to Done or In-Progress
+      if (s === "Done" || s === "In-Progress") {
+        await applyProfitFields(userId, c.id, c.treatmentRec, s);
+      }
+
+      onStatusUpdated(c.id, s);
+    } catch (err) {
+      console.error("Inline status change failed:", err);
+    }
   };
 
   return (
@@ -611,7 +702,13 @@ function CaseCard({ c, expanded, onToggle, onOpen, onStatusUpdated, onDeleted, o
         {/* Status + quick cycle */}
         <div className="flex flex-col items-end gap-2 flex-shrink-0">
           <StatusBadge status={c.treatmentStatus} />
-          <QuickStatusButton caseId={c.id} current={c.treatmentStatus} onUpdated={onStatusUpdated} />
+          <QuickStatusButton
+            caseId={c.id}
+            current={c.treatmentStatus}
+            treatmentRec={c.treatmentRec}
+            userId={userId}
+            onUpdated={onStatusUpdated}
+          />
         </div>
 
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
@@ -734,14 +831,7 @@ function CaseCard({ c, expanded, onToggle, onOpen, onStatusUpdated, onDeleted, o
                 const isActive = c.treatmentStatus === s;
                 return (
                   <button key={s}
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if (isActive) return;
-                      try {
-                        await updateDoc(doc(db, "cases", c.id), { treatmentStatus: s });
-                        onStatusUpdated(c.id, s);
-                      } catch {}
-                    }}
+                    onClick={(e) => handleInlineStatusChange(e, s)}
                     className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all ${
                       isActive
                         ? `${cfg.bg} ${cfg.border} ${cfg.text} cursor-default`
