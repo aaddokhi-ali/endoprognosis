@@ -67,21 +67,32 @@ const NEXT_STATUS: Record<TreatmentStatus, TreatmentStatus> = {
   "Postpone":     "No Treatment",
 };
 
-// ── MAP treatmentRec → procedure key ──
-function mapTreatmentRecToProcKey(treatmentRec: string): string {
+// ── MAP toothType → sub-key suffix ──
+function getToothSubKey(toothType: string): "anterior" | "premolar" | "molar" {
+  const t = (toothType || "").toLowerCase();
+  if (t.includes("molar"))    return "molar";
+  if (t.includes("premolar")) return "premolar";
+  return "anterior";
+}
+
+// ── MAP treatmentRec + toothType → exact procedure key ──
+function mapToProcKey(treatmentRec: string, toothType: string): string {
   const rec = (treatmentRec || "").toLowerCase();
-  if (rec.includes("root canal treatment") || rec.includes("rct"))       return "rct";
-  if (rec.includes("retreatment") || rec.includes("rcret"))              return "rcret";
-  if (rec.includes("vital pulp") || rec.includes("vpt"))                 return "vpt";
+  const sub = getToothSubKey(toothType);
+
+  if (rec.includes("retreatment") || rec.includes("rcret"))                          return `retreat-${sub}`;
+  if (rec.includes("root canal treatment") || rec.includes("rct"))                   return `rct-${sub}`;
+  if (rec.includes("vital pulp") || rec.includes("vpt"))                             return "vpt";
   if (rec.includes("microsurgery") || rec.includes("apico") || rec.includes("surgical")) return "apico";
   return "other";
 }
 
-// ── APPLY PROFIT FIELDS when case is marked Done ──
+// ── APPLY PROFIT FIELDS when case is marked Done or In-Progress ──
 async function applyProfitFields(
   userId: string,
   caseId: string,
   treatmentRec: string | undefined,
+  toothType: string | undefined,
   newStatus: TreatmentStatus
 ): Promise<void> {
   if (!treatmentRec) return;
@@ -93,7 +104,7 @@ async function applyProfitFields(
     if (!settingsSnap.exists()) return;
 
     const settings = settingsSnap.data() as ProfitSettings;
-    const procKey  = mapTreatmentRecToProcKey(treatmentRec);
+    const procKey  = mapToProcKey(treatmentRec, toothType || "");
     const fees     = settings.procedures?.[procKey];
     if (!fees) return;
 
@@ -101,17 +112,16 @@ async function applyProfitFields(
     const cost    = Number(fees.cost)    || 0;
     const profit  = revenue - cost;
 
-    // For In-Progress we record 50% of profit; Done = full
-    const profitStatus = newStatus === "Done" ? "full" : "in-progress";
+    const profitStatus   = newStatus === "Done" ? "full" : "in-progress";
     const recordedProfit = newStatus === "Done" ? profit : Math.round(profit * 0.5);
 
     await updateDoc(doc(db, "cases", caseId), {
       actualProcedure: procKey,
       revenue,
       cost,
-      profit:       recordedProfit,
+      profit:      recordedProfit,
       profitStatus,
-      completedAt:  new Date(),
+      completedAt: new Date(),
     });
   } catch (err) {
     console.error("applyProfitFields failed:", err);
@@ -142,12 +152,14 @@ function QuickStatusButton({
   caseId,
   current,
   treatmentRec,
+  toothType,
   userId,
   onUpdated,
 }: {
   caseId: string;
   current: TreatmentStatus;
   treatmentRec?: string;
+  toothType?: string;
   userId: string;
   onUpdated: (id: string, next: TreatmentStatus) => void;
 }) {
@@ -161,9 +173,8 @@ function QuickStatusButton({
     try {
       await updateDoc(doc(db, "cases", caseId), { treatmentStatus: next });
 
-      // Populate profit fields when moving to Done or In-Progress
       if (next === "Done" || next === "In-Progress") {
-        await applyProfitFields(userId, caseId, treatmentRec, next);
+        await applyProfitFields(userId, caseId, treatmentRec, toothType, next);
       }
 
       onUpdated(caseId, next);
@@ -294,7 +305,7 @@ export default function MyCases() {
     fetchCount();
   }, [user]);
 
-  // ── Optimistic status update (no refetch) ──
+  // ── Optimistic status update ──
   const handleStatusUpdated = useCallback((id: string, next: TreatmentStatus) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
   }, []);
@@ -347,18 +358,17 @@ export default function MyCases() {
     };
     filteredCases.filter(c => c.type !== "crack-classifier").forEach(c => {
       const tr = (c.treatmentRec || "").toLowerCase();
-      if (tr.includes("root canal treatment") || tr.includes("rct"))         groups["Root Canal Treatment"].push(c);
-      else if (tr.includes("retreatment") || tr.includes("rcret"))           groups["Root Canal Retreatment"].push(c);
-      else if (tr.includes("microsurgery") || tr.includes("apico"))          groups["Endodontic Microsurgery"].push(c);
-      else if (tr.includes("vital pulp") || tr.includes("vpt"))              groups["Vital Pulp Therapy"].push(c);
-      else                                                                    groups["Other / No Treatment"].push(c);
+      if (tr.includes("root canal treatment") || tr.includes("rct"))   groups["Root Canal Treatment"].push(c);
+      else if (tr.includes("retreatment") || tr.includes("rcret"))     groups["Root Canal Retreatment"].push(c);
+      else if (tr.includes("microsurgery") || tr.includes("apico"))    groups["Endodontic Microsurgery"].push(c);
+      else if (tr.includes("vital pulp") || tr.includes("vpt"))        groups["Vital Pulp Therapy"].push(c);
+      else                                                              groups["Other / No Treatment"].push(c);
     });
     return Object.fromEntries(Object.entries(groups).filter(([, list]) => list.length > 0));
   }, [filteredCases]);
 
   const crackCases = useMemo(() => filteredCases.filter(c => c.type === "crack-classifier"), [filteredCases]);
 
-  // ── INPUT STYLE ──
   const inputCls = "w-full bg-[#0a1428] border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-[#10b981]/50 transition-colors";
 
   if (!user) return (
@@ -390,7 +400,6 @@ export default function MyCases() {
                 </p>
               </div>
 
-              {/* Search */}
               <div className="relative w-full md:w-80">
                 <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600" width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
@@ -440,7 +449,6 @@ export default function MyCases() {
         {/* ── CONTENT ── */}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
 
-          {/* Error */}
           {error && (
             <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/25 text-red-400 px-4 py-3 rounded-2xl text-sm mb-6">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4"/><path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
@@ -448,14 +456,12 @@ export default function MyCases() {
             </div>
           )}
 
-          {/* Loading skeletons */}
           {loading && (
             <div className="space-y-3">
               {[1,2,3,4,5].map(i => <SkeletonCard key={i} />)}
             </div>
           )}
 
-          {/* Empty state */}
           {!loading && filteredCases.length === 0 && (
             <div className="text-center py-24">
               <svg className="mx-auto mb-4 opacity-20" width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -645,16 +651,15 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
     onFieldUpdated(c.id, { [field]: val } as Partial<SavedCase>);
   };
 
-  // ── Inline status change (from expanded panel) ──
+  // ── Inline status change from expanded panel ──
   const handleInlineStatusChange = async (e: React.MouseEvent, s: TreatmentStatus) => {
     e.stopPropagation();
     if (c.treatmentStatus === s) return;
     try {
       await updateDoc(doc(db, "cases", c.id), { treatmentStatus: s });
 
-      // Populate profit fields when moving to Done or In-Progress
       if (s === "Done" || s === "In-Progress") {
-        await applyProfitFields(userId, c.id, c.treatmentRec, s);
+        await applyProfitFields(userId, c.id, c.treatmentRec, c.toothType, s);
       }
 
       onStatusUpdated(c.id, s);
@@ -670,7 +675,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
 
       {/* ── CARD HEADER ── */}
       <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={onToggle}>
-        {/* Survival */}
         <div className="flex-shrink-0 w-14 text-center">
           {isCrack ? <span className="text-2xl">🦷</span>
             : survival !== undefined ? (
@@ -680,7 +684,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
         </div>
         <div className="w-px h-10 bg-white/8 flex-shrink-0" />
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-semibold text-white text-sm truncate">{c.caseName}</p>
@@ -699,13 +702,13 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
           </p>
         </div>
 
-        {/* Status + quick cycle */}
         <div className="flex flex-col items-end gap-2 flex-shrink-0">
           <StatusBadge status={c.treatmentStatus} />
           <QuickStatusButton
             caseId={c.id}
             current={c.treatmentStatus}
             treatmentRec={c.treatmentRec}
+            toothType={c.toothType}
             userId={userId}
             onUpdated={onStatusUpdated}
           />
@@ -721,7 +724,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
       {expanded && (
         <div className="border-t border-white/8 px-5 py-5 space-y-5">
 
-          {/* Edit hint */}
           <div className="flex items-center gap-2 text-[10px] text-gray-600">
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
               <path d="M8 2l2 2-6 6H2V8L8 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
@@ -729,10 +731,9 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             Click any field to edit inline
           </div>
 
-          {/* ── BASIC INFO ── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <EditableField label="Case Name"   field="caseName"    caseId={c.id} value={c.caseName}    onSaved={handleSaved} />
-            <EditableField label="Phone"       field="phoneNumber" caseId={c.id} value={c.phoneNumber} onSaved={handleSaved} />
+            <EditableField label="Case Name"      field="caseName"     caseId={c.id} value={c.caseName}     onSaved={handleSaved} />
+            <EditableField label="Phone"          field="phoneNumber"  caseId={c.id} value={c.phoneNumber}  onSaved={handleSaved} />
             <EditableField label="Follow-up Date" field="followUpDate" caseId={c.id} value={c.followUpDate} type="date" onSaved={handleSaved} />
           </div>
 
@@ -746,7 +747,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             <EditableField label="Tooth Number" field="toothNumber" caseId={c.id} value={c.toothNumber} onSaved={handleSaved} />
           </div>
 
-          {/* ── DIAGNOSIS ── */}
           {!isCrack && (
             <div>
               <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold mb-3">Diagnosis</p>
@@ -775,13 +775,11 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             </div>
           )}
 
-          {/* ── NOTES ── */}
           <div>
             <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold mb-3">Notes</p>
             <EditableField label="Further Notes" field="furtherNote" caseId={c.id} value={c.furtherNote} type="textarea" onSaved={handleSaved} />
           </div>
 
-          {/* Read-only fields */}
           {!isCrack && (survival !== undefined || c.epPoints !== undefined || c.remainingPercent !== undefined) && (
             <div>
               <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Calculated Values (read-only)</p>
@@ -808,7 +806,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             </div>
           )}
 
-          {/* Affecting factors (read-only) */}
           {c.affectingFactors && c.affectingFactors.length > 0 && (
             <div>
               <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Affecting Factors</p>
@@ -823,7 +820,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
           {/* ── STATUS + ACTIONS BAR ── */}
           <div className="pt-3 border-t border-white/8 space-y-3">
 
-            {/* Status selector */}
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-[10px] text-gray-600 uppercase tracking-wider">Status:</p>
               {(["No Treatment","In-Progress","Done","Postpone"] as TreatmentStatus[]).map(s => {
@@ -843,9 +839,7 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
               })}
             </div>
 
-            {/* Action buttons row */}
             <div className="flex items-center justify-between gap-3">
-              {/* Delete */}
               <div className="flex items-center gap-2">
                 {confirmDelete ? (
                   <>
@@ -870,7 +864,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                 )}
               </div>
 
-              {/* Full details link */}
               <button onClick={onOpen}
                 className="flex items-center gap-1.5 text-xs font-semibold text-[#10b981] hover:text-[#0ea76e] transition-colors">
                 Full details page
