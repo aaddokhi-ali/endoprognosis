@@ -56,21 +56,42 @@ export function detectProcedureCategory(
 ): ProcedureCategory {
   if (!isRestorable) return "No treatment";
 
-  const recLower = treatmentRec.toLowerCase();
+  const recLower    = treatmentRec.toLowerCase();
   const pulpalLower = pulpal.toLowerCase();
 
-  if (recLower.includes("retreatment") || pulpalLower.includes("previously root canal treated")) {
+  // Retreatment — previously treated tooth
+  if (
+    recLower.includes("retreatment") ||
+    pulpalLower.includes("previously root canal treated") ||
+    pulpalLower.includes("previously treated")
+  ) {
     return "RCreT";
   }
-  if (recLower.includes("vital pulp") || pulpalLower.includes("reversible pulpitis")) {
+
+  // Vital pulp therapy — reversible pulpitis
+  if (
+    recLower.includes("vital pulp") ||
+    pulpalLower.includes("reversible pulpitis")
+  ) {
     return "VPT";
   }
-  if (recLower.includes("microsurgical") || recLower.includes("apico")) {
+
+  // Microsurgical endodontics — apicoectomy
+  if (
+    recLower.includes("microsurgical") ||
+    recLower.includes("apico")
+  ) {
     return "Apico";
   }
-  if (recLower.includes("root canal treatment") || 
-      pulpalLower.includes("irreversible pulpitis") || 
-      pulpalLower.includes("pulp necrosis")) {
+
+  // Root canal treatment — covers irreversible pulpitis, necrosis,
+  // previously initiated therapy, and direct RCT recommendation
+  if (
+    recLower.includes("root canal treatment") ||
+    pulpalLower.includes("irreversible pulpitis") ||
+    pulpalLower.includes("pulp necrosis") ||
+    pulpalLower.includes("previously initiated therapy")
+  ) {
     return "RCT";
   }
 
@@ -110,40 +131,40 @@ export const casesService = {
     const now = Timestamp.now();
 
     const lightCase: LightSavedCase = {
-      userId: lightData.userId,
-      caseName: lightData.caseName,
-      phoneNumber: lightData.phoneNumber,
-      toothNumber: lightData.toothNumber,
-      procedureCategory: lightData.procedureCategory,
-      survivalPercentage: lightData.survivalPercentage,
-      isPractical: lightData.isPractical,
-      totalDPI: lightData.totalDPI,
-      pulpalDiagnosis: lightData.pulpalDiagnosis,
+      userId:              lightData.userId,
+      caseName:            lightData.caseName,
+      phoneNumber:         lightData.phoneNumber,
+      toothNumber:         lightData.toothNumber,
+      procedureCategory:   lightData.procedureCategory,
+      survivalPercentage:  lightData.survivalPercentage,
+      isPractical:         lightData.isPractical,
+      totalDPI:            lightData.totalDPI,
+      pulpalDiagnosis:     lightData.pulpalDiagnosis,
       periapicalDiagnosis: lightData.periapicalDiagnosis,
-      remainingPercent: lightData.remainingPercent,
-      followUpDate: lightData.followUpDate || null,
-      createdAt: now,
-      updatedAt: now,
+      remainingPercent:    lightData.remainingPercent,
+      followUpDate:        lightData.followUpDate || null,
+      createdAt:           now,
+      updatedAt:           now,
     };
 
-    // 1. Save the lightweight case (this is the fast part)
+    // 1. Save the lightweight case
     const docRef = await addDoc(
-      collection(db, `users/${lightData.userId}/cases`), 
+      collection(db, `users/${lightData.userId}/cases`),
       lightCase
     );
 
     // 2. Save heavy details in subcollection
     await setDoc(
-      doc(db, `users/${lightData.userId}/cases/${docRef.id}/details`, 'full'),
+      doc(db, `users/${lightData.userId}/cases/${docRef.id}/details`, "full"),
       {
         ...fullDetails,
         updatedAt: now,
       }
     );
 
-    return { 
-      id: docRef.id, 
-      ...lightCase 
+    return {
+      id: docRef.id,
+      ...lightCase,
     };
   },
 
@@ -152,18 +173,20 @@ export const casesService = {
       collection(db, `users/${userId}/cases`),
       orderBy("createdAt", "desc")
     );
-
     const snapshot = await getDocs(q);
     return snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
-      ...docSnap.data()
+      ...docSnap.data(),
     })) as LightSavedCase[];
   },
 
-  async getCaseDetails(userId: string, caseId: string): Promise<FullCaseDetails | null> {
+  async getCaseDetails(
+    userId: string,
+    caseId: string
+  ): Promise<FullCaseDetails | null> {
     try {
       const snap = await getDoc(
-        doc(db, `users/${userId}/cases/${caseId}/details`, 'full')
+        doc(db, `users/${userId}/cases/${caseId}/details`, "full")
       );
       return snap.exists() ? (snap.data() as FullCaseDetails) : null;
     } catch (error) {
@@ -175,10 +198,12 @@ export const casesService = {
   async deleteCase(userId: string, caseId: string) {
     try {
       await deleteDoc(doc(db, `users/${userId}/cases`, caseId));
-      await deleteDoc(doc(db, `users/${userId}/cases/${caseId}/details`, 'full'));
+      await deleteDoc(
+        doc(db, `users/${userId}/cases/${caseId}/details`, "full")
+      );
     } catch (error) {
       console.error("Error deleting case:", error);
       throw error;
     }
-  }
+  },
 };
