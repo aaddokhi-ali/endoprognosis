@@ -284,7 +284,7 @@ export default function EndoDecideResult() {
   const iowaCfg = iowa ? IOWA_CONFIG[iowa.stage] : null;
 
   // ════════════════════════════════════════════════════════════
-  // SAVE CASE
+  // SAVE CASE — FIXED
   // ════════════════════════════════════════════════════════════
   const handleSaveCase = async () => {
     if (!caseName.trim() || !phoneNumber.trim()) {
@@ -295,9 +295,13 @@ export default function EndoDecideResult() {
     if (saving) return;
     setSaving(true);
 
+    // Synchronous flag — avoids relying on async setState to know if save succeeded
+    let saved = false;
+
     try {
-      // Duplicate check
-      const q = query(collection(db, "cases"),
+      // ── Duplicate check ──
+      const q = query(
+        collection(db, "cases"),
         where("userId",      "==", user.uid),
         where("toothNumber", "==", result.toothNumber),
         where("type",        "==", "endodecide")
@@ -307,8 +311,8 @@ export default function EndoDecideResult() {
         for (const d of snap.docs) {
           const ex = d.data();
           if (
-            ex.survivalEstimate   === survival &&
-            ex.pulpalDiagnosis    === result.pulpalDiagnosis &&
+            ex.survivalEstimate    === survival &&
+            ex.pulpalDiagnosis     === result.pulpalDiagnosis &&
             ex.periapicalDiagnosis === result.periapicalDiagnosis
           ) {
             alert("This case was already saved. Check My Cases.");
@@ -318,8 +322,9 @@ export default function EndoDecideResult() {
         }
       }
 
+      // ── Write to Firestore ──
       await addDoc(collection(db, "cases"), {
-        // ── Identity ──
+        // Identity
         type:          "endodecide",
         toolType:      result.toolType ?? "predictor",
         caseName:      caseName.trim(),
@@ -327,23 +332,23 @@ export default function EndoDecideResult() {
         followUpDate:  followUpDate || null,
         furtherNote:   furtherNote.trim(),
 
-        // ── Patient ──
+        // Patient
         toothNumber:   result.toothNumber  ?? "",
         toothType:     result.toothType    ?? "Molar",
         gender:        result.gender       ?? "",
         ageGroup:      result.ageGroup     ?? "",
         asa:           result.formData?.medical ?? "0",
 
-        // ── Urgency ──
+        // Urgency
         urgency,
         casePresText:  result.casePresText ?? "",
 
-        // ── Diagnosis (AAE 2013) ──
+        // Diagnosis (AAE 2013)
         pulpalDiagnosis:     result.pulpalDiagnosis     ?? "",
         periapicalDiagnosis: result.periapicalDiagnosis ?? "",
         inconsistencyNotes:  inconsistencies,
 
-        // ── Prognosis ──
+        // Prognosis
         survivalEstimate:    survival,
         survivalRange:       range,
         epPoints:            result.totalDPI    ?? 0,
@@ -354,18 +359,18 @@ export default function EndoDecideResult() {
         affectingFactors:    factors,
         treatmentStatus:     "No Treatment",
 
-        // ── Structure ──
+        // Structure
         remainingStructure:  result.remainingPercent ?? 0,
         walls:               result.walls    ?? {},
         occlusal:            result.occlusal ?? "access_only",
         ferrule:             result.ferrule  ?? {},
 
-        // ── Periodontal ──
+        // Periodontal
         periodontalStatus:   result.formData?.perio ?? "0",
         sites:               sites,
         deepCount:           result.deepCount ?? 0,
 
-        // ── Crack (present only when triggered) ──
+        // Crack (present only when triggered)
         crackPresent:    result.crackPresent    ?? false,
         crackConfirmed:  result.crackConfirmed  ?? false,
         crackMethods:    result.crackMethods    ?? {},
@@ -373,20 +378,20 @@ export default function EndoDecideResult() {
         iowaStage:       iowa?.stage  ?? null,
         iowaSuccessRate: iowa?.successRate ?? null,
 
-        // ── VRF ──
+        // VRF
         vrfFlag,
 
-        // ── Snapshot ──
+        // Snapshot
         patientInputs:    result.formData ?? {},
         predictionResult: {
-          survivalPercentage: survival,
-          survivalRange:      range,
-          totalDPI:           result.totalDPI ?? 0,
-          tier1:              result.tier1Deductions ?? 0,
-          tier2:              result.tier2Deductions ?? 0,
-          tier3:              result.tier3Deductions ?? 0,
-          affectingFactors:   factors,
-          pulpalDiagnosis:    result.pulpalDiagnosis,
+          survivalPercentage:  survival,
+          survivalRange:       range,
+          totalDPI:            result.totalDPI ?? 0,
+          tier1:               result.tier1Deductions ?? 0,
+          tier2:               result.tier2Deductions ?? 0,
+          tier3:               result.tier3Deductions ?? 0,
+          affectingFactors:    factors,
+          pulpalDiagnosis:     result.pulpalDiagnosis,
           periapicalDiagnosis: result.periapicalDiagnosis,
           iowa,
           vrfFlag,
@@ -397,15 +402,32 @@ export default function EndoDecideResult() {
         savedAt:   new Date().toISOString(),
       });
 
+      // ── Mark success synchronously before any state updates ──
+      saved = true;
+
+      // ── Reset form state ──
       setSaveSuccess(true);
       setShowSaveModal(false);
-      setCaseName(""); setPhoneNumber(""); setFollowUpDate(""); setFurtherNote("");
-      localStorage.removeItem("lastEndoDecideResult");
+      setCaseName("");
+      setPhoneNumber("");
+      setFollowUpDate("");
+      setFurtherNote("");
+
     } catch (err) {
       console.error("Save failed:", err);
       alert("Failed to save case. Please try again.");
     } finally {
       setSaving(false);
+      // ── localStorage removal is OUTSIDE the try block ──
+      // Any error here cannot trigger the catch above, and we
+      // only remove the entry when Firestore write was confirmed.
+      if (saved) {
+        try {
+          localStorage.removeItem("lastEndoDecideResult");
+        } catch {
+          // localStorage not available in this environment — safe to ignore
+        }
+      }
     }
   };
 
@@ -697,7 +719,7 @@ export default function EndoDecideResult() {
             )}
           </Panel>
 
-          {/* ── PANEL 2: DIAGNOSIS ── */}
+          {/* ── PANEL 3: DIAGNOSIS ── */}
           <Panel title="Working Diagnosis — AAE 2013" accent="#3b82f6">
             <div className="grid md:grid-cols-2 gap-4 mb-4">
               <div className="bg-white/4 rounded-2xl p-4">
@@ -749,7 +771,7 @@ export default function EndoDecideResult() {
             </div>
           </Panel>
 
-          {/* ── PANEL 3: AFFECTING FACTORS ── */}
+          {/* ── PANEL 4: AFFECTING FACTORS ── */}
           {factors.length > 0 && (
             <Panel title="Factors Affecting Survivability" accent="#f59e0b">
               <div className="space-y-2">
@@ -769,7 +791,7 @@ export default function EndoDecideResult() {
             </Panel>
           )}
 
-          {/* ── PANEL 4A: IOWA CLASSIFICATION (conditional) ── */}
+          {/* ── PANEL 5A: IOWA CLASSIFICATION (conditional) ── */}
           {iowa && iowaCfg && result.crackConfirmed && (
             <Panel title="Iowa Classification — Krell & Caplan 2018" accent="#f97316" conditional>
 
@@ -871,7 +893,7 @@ export default function EndoDecideResult() {
             </div>
           )}
 
-          {/* ── PANEL 4B: VRF FLAG (conditional) ── */}
+          {/* ── PANEL 5B: VRF FLAG (conditional) ── */}
           {vrfFlag && (
             <Panel title="Vertical Root Fracture Alert" accent="#ef4444" conditional>
               <div className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-5 mb-4">

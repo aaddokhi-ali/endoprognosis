@@ -1,229 +1,222 @@
+// app/mycases/page.tsx
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "../context/AuthContext";
 import {
-  collection, addDoc, serverTimestamp,
-  query, where, getDocs,
+  collection, query, where, orderBy,
+  getDocs, doc, updateDoc, deleteDoc, startAfter, limit,
+  getCountFromServer, getDoc,
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
+import { useAuth } from "../context/AuthContext";
 import Navigation from "../components/navigation";
 import ProtectedRoute from "../components/protectedroute";
 
 // ════════════════════════════════════════════════════════════
 // TYPES
 // ════════════════════════════════════════════════════════════
-type Urgency = "low" | "medium" | "high";
+type TreatmentStatus = "No Treatment" | "In-Progress" | "Done" | "Postpone";
+type ActiveTab = "All" | "EndoDecide" | "Crack Cases" | "No Treatment" | "In-Progress" | "Done" | "Postpone";
 
-const URGENCY_ACCENT: Record<Urgency, string> = {
+interface SavedCase {
+  id: string;
+  caseName: string;
+  phoneNumber?: string;
+  gender?: string;
+  ageGroup?: string;
+  asa?: string;
+  toothNumber: string;
+  toothType: string;
+  pulpalDiagnosis?: string;
+  periapicalDiagnosis?: string;
+  periodontalStatus?: string;
+  remainingPercent?: number;
+  affectingFactors?: string[];
+  treatmentRec?: string;
+  survivalEstimate?: number;
+  survivalRange?: [number, number];
+  isPractical?: boolean;
+  treatmentStatus: TreatmentStatus;
+  followUpDate: string | null;
+  furtherNote?: string;
+  // type field — "predictor" | "crack-classifier" | "endodecide"
+  type?: string;
+  toolType?: string;
+  // crack / iowa fields
+  classification?: string;
+  iowaStage?: string;
+  iowaSuccessRate?: number;
+  isVRF?: boolean;
+  vrfFlag?: boolean;
+  crackConfirmed?: boolean;
+  // prognosis fields
+  epPoints?: number;
+  // urgency (EndoDecide only)
+  urgency?: "low" | "medium" | "high";
+  createdAt: any;
+}
+
+interface ProfitSettings {
+  currency: "SAR" | "USD";
+  procedures: Record<string, { revenue: number; cost: number }>;
+}
+
+const PAGE_SIZE = 15;
+
+// ════════════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════════════
+const STATUS_CONFIG: Record<TreatmentStatus, {
+  label: string; bg: string; border: string; text: string; dot: string;
+}> = {
+  "No Treatment": { label: "No Treatment", bg: "bg-gray-500/15",    border: "border-gray-500/30",    text: "text-gray-400",    dot: "bg-gray-400"    },
+  "In-Progress":  { label: "In Progress",  bg: "bg-amber-500/15",   border: "border-amber-500/30",   text: "text-amber-400",   dot: "bg-amber-400"   },
+  "Done":         { label: "Done",         bg: "bg-emerald-500/15", border: "border-emerald-500/30", text: "text-emerald-400", dot: "bg-emerald-400" },
+  "Postpone":     { label: "Postponed",    bg: "bg-purple-500/15",  border: "border-purple-500/30",  text: "text-purple-400",  dot: "bg-purple-400"  },
+};
+
+const NEXT_STATUS: Record<TreatmentStatus, TreatmentStatus> = {
+  "No Treatment": "In-Progress",
+  "In-Progress":  "Done",
+  "Done":         "Postpone",
+  "Postpone":     "No Treatment",
+};
+
+const URGENCY_ACCENT: Record<string, string> = {
   low:    "#10b981",
   medium: "#f59e0b",
   high:   "#ef4444",
 };
 
-const IOWA_CONFIG: Record<string, {
-  color: string; bg: string; border: string; label: string;
-}> = {
-  I:   { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", label: "Excellent prognosis" },
-  II:  { color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   label: "Favourable prognosis" },
-  III: { color: "text-orange-400",  bg: "bg-orange-500/10",  border: "border-orange-500/30",  label: "Moderate prognosis" },
-  IV:  { color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/30",     label: "Guarded prognosis" },
-};
+// ════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════
+function getToothSubKey(toothType: string): "anterior" | "premolar" | "molar" {
+  const t = (toothType || "").toLowerCase();
+  if (t.includes("molar"))    return "molar";
+  if (t.includes("premolar")) return "premolar";
+  return "anterior";
+}
 
-const LEVEL_COLOR: Record<string, string> = {
-  normal: "#10b981", attachment: "#f59e0b", deep: "#ef4444",
-};
-const LEVEL_LABEL: Record<string, string> = {
-  normal:     "Normal (<3mm)",
-  attachment: "Attachment loss (3–4mm)",
-  deep:       "Deep (≥5mm)",
-};
+function mapToProcKey(treatmentRec: string, toothType: string): string {
+  const rec = (treatmentRec || "").toLowerCase();
+  const sub = getToothSubKey(toothType);
+  if (rec.includes("retreatment"))                                                    return `retreat-${sub}`;
+  if (rec.includes("root canal treatment"))                                           return `rct-${sub}`;
+  if (rec.includes("vital pulp"))                                                     return "vpt";
+  if (rec.includes("microsurgical") || rec.includes("apico") || rec.includes("surgical")) return "apico";
+  return "other";
+}
+
+async function applyProfitFields(
+  userId: string, caseId: string,
+  treatmentRec: string | undefined, toothType: string | undefined,
+  newStatus: TreatmentStatus
+): Promise<void> {
+  if (!treatmentRec) return;
+  try {
+    const settingsSnap = await getDoc(doc(db, "users", userId, "settings", "profitSettings"));
+    if (!settingsSnap.exists()) return;
+    const settings = settingsSnap.data() as ProfitSettings;
+    const procKey  = mapToProcKey(treatmentRec, toothType || "");
+    const fees     = settings.procedures?.[procKey];
+    if (!fees) return;
+    const revenue = Number(fees.revenue) || 0;
+    const cost    = Number(fees.cost)    || 0;
+    const profit  = revenue - cost;
+    await updateDoc(doc(db, "cases", caseId), {
+      actualProcedure: procKey,
+      revenue, cost,
+      profit:      newStatus === "Done" ? profit : Math.round(profit * 0.5),
+      profitStatus: newStatus === "Done" ? "full" : "in-progress",
+      completedAt:  new Date(),
+    });
+  } catch (err) { console.error("applyProfitFields failed:", err); }
+}
+
+function survivalColor(v?: number): string {
+  if (!v) return "text-gray-500";
+  if (v >= 80) return "text-emerald-400";
+  if (v >= 65) return "text-amber-400";
+  return "text-red-400";
+}
+
+// Which "type" values count as EndoDecide cases
+function isEndoDecide(c: SavedCase): boolean {
+  return c.type === "endodecide";
+}
+function isLegacyCrack(c: SavedCase): boolean {
+  return c.type === "crack-classifier";
+}
+function isLegacyPredictor(c: SavedCase): boolean {
+  return c.type === "predictor";
+}
 
 // ════════════════════════════════════════════════════════════
-// SURVIVAL GAUGE
+// STATUS BADGE
 // ════════════════════════════════════════════════════════════
-function SurvivalGauge({ value, range, accent }: {
-  value: number; range: [number, number]; accent: string;
+function StatusBadge({ status }: { status: TreatmentStatus }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG["No Treatment"];
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// QUICK STATUS CYCLER
+// ════════════════════════════════════════════════════════════
+function QuickStatusButton({ caseId, current, treatmentRec, toothType, userId, onUpdated }: {
+  caseId: string; current: TreatmentStatus; treatmentRec?: string;
+  toothType?: string; userId: string; onUpdated: (id: string, next: TreatmentStatus) => void;
 }) {
-  const clamped = Math.min(100, Math.max(0, value));
-  const color   = clamped >= 80 ? "#10b981" : clamped >= 65 ? "#f59e0b" : clamped >= 50 ? "#f97316" : "#ef4444";
-  const r       = 56;
-  const circ    = 2 * Math.PI * r;
-  const dash    = (clamped / 100) * circ * 0.75;
+  const [updating, setUpdating] = useState(false);
+  const next    = NEXT_STATUS[current] ?? "No Treatment";
+  const nextCfg = STATUS_CONFIG[next];
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUpdating(true);
+    try {
+      await updateDoc(doc(db, "cases", caseId), { treatmentStatus: next });
+      if (next === "Done" || next === "In-Progress") {
+        await applyProfitFields(userId, caseId, treatmentRec, toothType, next);
+      }
+      onUpdated(caseId, next);
+    } catch (err) { console.error("Status update failed:", err); }
+    finally { setUpdating(false); }
+  };
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative" style={{ width: 168, height: 168 }}>
-        <svg width="168" height="168" viewBox="0 0 168 168">
-          {/* Track */}
-          <circle cx="84" cy="84" r={r} fill="none" stroke="rgba(255,255,255,0.06)"
-            strokeWidth="10" strokeDasharray={`${circ * 0.75} ${circ}`}
-            strokeLinecap="round" transform="rotate(-225 84 84)" />
-          {/* Fill */}
-          <circle cx="84" cy="84" r={r} fill="none" stroke={color}
-            strokeWidth="10" strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round" transform="rotate(-225 84 84)"
-            style={{ filter: `drop-shadow(0 0 10px ${color}60)`, transition: "stroke-dasharray 1s ease" }} />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-black" style={{ color }}>{clamped}%</span>
-          <span className="text-[9px] text-gray-500 uppercase tracking-wider mt-0.5">4-year survival</span>
-          <span className="text-[9px] text-gray-600 mt-0.5">{range[0]}–{range[1]}% range</span>
-        </div>
-      </div>
-    </div>
+    <button onClick={handleClick} disabled={updating} title={`Mark as: ${next}`}
+      className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-full border transition-all hover:opacity-90 disabled:opacity-50 ${nextCfg.bg} ${nextCfg.border} ${nextCfg.text}`}>
+      {updating
+        ? <span className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />
+        : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>}
+      {next}
+    </button>
   );
 }
 
 // ════════════════════════════════════════════════════════════
-// IOWA STAGE GAUGE
+// SKELETON
 // ════════════════════════════════════════════════════════════
-function IowaGauge({ successRate }: { successRate: number }) {
-  const color = successRate >= 80 ? "#10b981" : successRate >= 65 ? "#f59e0b" : successRate >= 50 ? "#f97316" : "#ef4444";
-  const r     = 40;
-  const circ  = 2 * Math.PI * r;
-  const dash  = (successRate / 100) * circ * 0.75;
+function SkeletonCard() {
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative" style={{ width: 110, height: 110 }}>
-        <svg width="110" height="110" viewBox="0 0 110 110">
-          <circle cx="55" cy="55" r={r} fill="none" stroke="rgba(255,255,255,0.06)"
-            strokeWidth="8" strokeDasharray={`${circ * 0.75} ${circ}`}
-            strokeLinecap="round" transform="rotate(-225 55 55)" />
-          <circle cx="55" cy="55" r={r} fill="none" stroke={color}
-            strokeWidth="8" strokeDasharray={`${dash} ${circ}`}
-            strokeLinecap="round" transform="rotate(-225 55 55)"
-            style={{ filter: `drop-shadow(0 0 6px ${color}60)` }} />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-black" style={{ color }}>{successRate}%</span>
-          <span className="text-[8px] text-gray-600 uppercase tracking-wider">1-yr success</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
-// DPI GAUGE BAR
-// ════════════════════════════════════════════════════════════
-function getDPILabel(dpi: number): { label: string; color: string; bg: string; border: string; desc: string } {
-  if (dpi <= 4)  return { label: "Low",      color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", desc: "Favourable prognosis complexity" };
-  if (dpi <= 9)  return { label: "Moderate", color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   desc: "Moderate complexity — careful case selection" };
-  if (dpi <= 16) return { label: "High",     color: "text-orange-400",  bg: "bg-orange-500/10",  border: "border-orange-500/30",  desc: "High complexity — advanced clinical skill required" };
-  return               { label: "Critical",  color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/30",     desc: "Critical — consider extraction and alternative restoration" };
-}
-
-function DPIBar({ value }: { value: number }) {
-  const cfg    = getDPILabel(value);
-  const maxDPI = 32;
-  const pct    = Math.min(100, (value / maxDPI) * 100);
-  return (
-    <div>
-      <div className="flex items-end justify-between mb-2">
-        <div>
-          <span className={`text-4xl font-black ${cfg.color}`}>{value}</span>
-          <span className="text-gray-500 text-sm ml-1">pts</span>
-        </div>
-        <span className={`text-xs font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-          {cfg.label}
-        </span>
-      </div>
-      <div className="relative h-3 rounded-full bg-white/8 overflow-hidden mb-2">
-        <div className="absolute top-0 left-0 h-full rounded-full transition-all duration-1000"
-          style={{ width: `${pct}%`, background: cfg.color.replace("text-","").replace("-400",""),
-            boxShadow: `0 0 8px currentColor` }} />
-      </div>
-      <div className="flex justify-between text-[9px] text-gray-600">
-        <span>0</span><span>4</span><span>9</span><span>16</span><span>32+</span>
-      </div>
-      <p className="text-xs text-gray-500 mt-2">{cfg.desc}</p>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
-// FACTOR SEVERITY
-// ════════════════════════════════════════════════════════════
-function getFactorSeverity(factor: string): { dot: string; badge: string; weight: string } {
-  const f = factor.toLowerCase();
-  if (f.includes("no ferrule") || f.includes("advanced") || f.includes("instrument sep") || f.includes("perforation") || f.includes("impractical"))
-    return { dot: "bg-red-500",    badge: "bg-red-500/15 text-red-400",     weight: "High impact" };
-  if (f.includes("periapical") || f.includes("insufficient ferrule") || f.includes("high endo") || f.includes("prosthodontic") || f.includes("moderate"))
-    return { dot: "bg-amber-500",  badge: "bg-amber-500/15 text-amber-400", weight: "Moderate impact" };
-  return   { dot: "bg-blue-400",   badge: "bg-blue-500/15 text-blue-400",   weight: "Contributing" };
-}
-
-// ════════════════════════════════════════════════════════════
-// PANEL WRAPPER
-// ════════════════════════════════════════════════════════════
-function Panel({ title, accent, children, conditional }: {
-  title: string; accent: string; children: React.ReactNode; conditional?: boolean;
-}) {
-  return (
-    <div className={`bg-[#0d1a30] border rounded-3xl p-6 transition-all ${
-      conditional ? "border-orange-500/20" : "border-white/10"
-    }`}>
-      <div className="flex items-center gap-2 mb-5">
-        <div className="w-1 h-5 rounded-full" style={{ background: accent }} />
-        <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-400">{title}</p>
-        {conditional && (
-          <span className="ml-auto text-[9px] bg-orange-500/15 border border-orange-500/25 text-orange-400 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-            Conditional
-          </span>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
-// TIER BREAKDOWN (compact)
-// ════════════════════════════════════════════════════════════
-function TierBreakdown({ t1, t2, t3, baseline }: {
-  t1: number; t2: number; t3: number; baseline: number;
-}) {
-  const items = [
-    { label: "Baseline", value: baseline, color: "#10b981", positive: true },
-    { label: "Tier 1 — Tooth factors",    value: -t1, color: t1 > 0 ? "#f59e0b" : "#10b981" },
-    { label: "Tier 2 — Patient factors",  value: -t2, color: t2 > 0 ? "#f97316" : "#10b981" },
-    { label: "Tier 3 — Procedural",       value: -t3, color: t3 > 0 ? "#ef4444" : "#10b981" },
-  ];
-  return (
-    <div className="space-y-1.5">
-      {items.map((item, i) => (
-        <div key={i} className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/3">
-          <span className="text-xs text-gray-400">{item.label}</span>
-          <span className="text-xs font-bold" style={{ color: item.color }}>
-            {item.value > 0 ? "+" : ""}{item.value}%
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
-// INCONSISTENCY ALERT
-// ════════════════════════════════════════════════════════════
-function InconsistencyAlert({ notes }: { notes: string[] }) {
-  if (!notes || notes.length === 0) return null;
-  return (
-    <div className="space-y-2">
-      {notes.map((note, i) => (
-        <div key={i} className="flex items-start gap-3 bg-amber-500/8 border border-amber-500/25 rounded-2xl px-4 py-3.5">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-amber-400 flex-shrink-0 mt-0.5">
-            <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-            <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-          </svg>
-          <div>
-            <p className="text-xs font-bold text-amber-400 mb-0.5">Inconsistent Finding</p>
-            <p className="text-xs text-amber-300/80 leading-relaxed">{note}</p>
+    <div className="bg-[#0d1a30] border border-white/8 rounded-2xl p-5 animate-pulse">
+      <div className="flex justify-between items-start gap-4">
+        <div className="flex-1 space-y-3">
+          <div className="h-5 bg-white/8 rounded-lg w-1/3" />
+          <div className="h-3 bg-white/5 rounded w-1/4" />
+          <div className="grid grid-cols-4 gap-3 mt-4">
+            {[1,2,3,4].map(i => <div key={i} className="h-8 bg-white/5 rounded-xl" />)}
           </div>
         </div>
-      ))}
+        <div className="w-20 h-16 bg-white/5 rounded-xl" />
+      </div>
     </div>
   );
 }
@@ -231,894 +224,725 @@ function InconsistencyAlert({ notes }: { notes: string[] }) {
 // ════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════
-export default function EndoDecideResult() {
-  const [result, setResult]               = useState<any>(null);
-  const [showSaveModal, setShowSaveModal] = useState(false);
-  const [caseName, setCaseName]           = useState("");
-  const [phoneNumber, setPhoneNumber]     = useState("");
-  const [followUpDate, setFollowUpDate]   = useState("");
-  const [furtherNote, setFurtherNote]     = useState("");
-  const [saving, setSaving]               = useState(false);
-  const [saveSuccess, setSaveSuccess]     = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const [showTierBreakdown, setShowTierBreakdown] = useState(false);
+export default function MyCases() {
+  const [cases, setCases]             = useState<SavedCase[]>([]);
+  const [lastDoc, setLastDoc]         = useState<any>(null);
+  const [hasMore, setHasMore]         = useState(true);
+  const [totalCount, setTotalCount]   = useState<number | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError]             = useState<string | null>(null);
+  const [searchTerm, setSearchTerm]   = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [activeTab, setActiveTab]     = useState<ActiveTab>("All");
+  const [expandedId, setExpandedId]   = useState<string | null>(null);
 
   const { user } = useAuth();
   const router   = useRouter();
+  const hasFetched = useRef(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem("lastEndoDecideResult");
-    if (raw) {
-      try { setResult(JSON.parse(raw)); }
-      catch { router.push("/endodecide"); }
-    } else {
-      router.push("/endodecide");
-    }
-  }, [router]);
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
-  if (!result) return (
+  const fetchCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const q = query(collection(db, "cases"), where("userId", "==", user.uid));
+      const snap = await getCountFromServer(q);
+      setTotalCount(snap.data().count);
+    } catch {}
+  }, [user]);
+
+  const loadCases = useCallback(async (loadMore = false) => {
+    if (!user) return;
+    if (loadMore) setLoadingMore(true);
+    else { setLoading(true); setCases([]); setLastDoc(null); setHasMore(true); }
+    setError(null);
+    try {
+      let q = query(
+        collection(db, "cases"),
+        where("userId", "==", user.uid),
+        orderBy("createdAt", "desc"),
+        limit(PAGE_SIZE)
+      );
+      if (loadMore && lastDoc) q = query(q, startAfter(lastDoc));
+      const snapshot = await getDocs(q);
+      const newCases: SavedCase[] = snapshot.docs.map(d => {
+        const data = d.data() as Omit<SavedCase, "id">;
+        return {
+          id: d.id, ...data,
+          treatmentStatus: (data.treatmentStatus ?? "No Treatment") as TreatmentStatus,
+          followUpDate:    data.followUpDate ?? null,
+          affectingFactors: data.affectingFactors ?? [],
+        } as SavedCase;
+      });
+      setCases(prev => loadMore ? [...prev, ...newCases] : newCases);
+      if (snapshot.docs.length < PAGE_SIZE) setHasMore(false);
+      if (snapshot.docs.length > 0) setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+    } catch {
+      setError("Failed to load your cases. Please refresh.");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [user, lastDoc]);
+
+  useEffect(() => {
+    if (!user || hasFetched.current) return;
+    hasFetched.current = true;
+    loadCases(false);
+    fetchCount();
+  }, [user]);
+
+  const handleStatusUpdated = useCallback((id: string, next: TreatmentStatus) => {
+    setCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
+  }, []);
+
+  const handleDeleted = useCallback((id: string) => {
+    setCases(prev => prev.filter(c => c.id !== id));
+    setTotalCount(prev => prev !== null ? prev - 1 : null);
+  }, []);
+
+  const handleFieldUpdated = useCallback((id: string, fields: Partial<SavedCase>) => {
+    setCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
+  }, []);
+
+  // ── Tab counts ──
+  const tabCounts = useMemo(() => ({
+    "All":          cases.length,
+    "EndoDecide":   cases.filter(c => isEndoDecide(c)).length,
+    "Crack Cases":  cases.filter(c => isLegacyCrack(c)).length,
+    "No Treatment": cases.filter(c => c.treatmentStatus === "No Treatment" && !isLegacyCrack(c)).length,
+    "In-Progress":  cases.filter(c => c.treatmentStatus === "In-Progress").length,
+    "Done":         cases.filter(c => c.treatmentStatus === "Done").length,
+    "Postpone":     cases.filter(c => c.treatmentStatus === "Postpone").length,
+  }), [cases]);
+
+  // ── Filter ──
+  const filteredCases = useMemo(() => {
+    let result = cases;
+    if (debouncedSearch) {
+      const term = debouncedSearch.toLowerCase().trim();
+      result = result.filter(c => [
+        c.caseName, c.phoneNumber, c.toothNumber, c.toothType,
+        c.pulpalDiagnosis, c.periapicalDiagnosis, c.treatmentRec,
+        c.gender, c.ageGroup, ...(c.affectingFactors || []),
+      ].join(" ").toLowerCase().includes(term));
+    }
+    if (activeTab === "EndoDecide")   return result.filter(c => isEndoDecide(c));
+    if (activeTab === "Crack Cases")  return result.filter(c => isLegacyCrack(c));
+    if (activeTab !== "All")          return result.filter(c => c.treatmentStatus === activeTab && !isLegacyCrack(c));
+    return result;
+  }, [cases, debouncedSearch, activeTab]);
+
+  // ── Categorize non-crack cases by treatment ──
+  const categorizedCases = useMemo(() => {
+    const groups: Record<string, SavedCase[]> = {
+      "Root Canal Treatment":    [],
+      "Root Canal Retreatment":  [],
+      "Endodontic Microsurgery": [],
+      "Vital Pulp Therapy":      [],
+      "Other / No Treatment":    [],
+    };
+    filteredCases.filter(c => !isLegacyCrack(c)).forEach(c => {
+      const tr = (c.treatmentRec || "").toLowerCase();
+      if (tr.includes("root canal treatment"))              groups["Root Canal Treatment"].push(c);
+      else if (tr.includes("retreatment"))                  groups["Root Canal Retreatment"].push(c);
+      else if (tr.includes("microsurgical") || tr.includes("apico")) groups["Endodontic Microsurgery"].push(c);
+      else if (tr.includes("vital pulp"))                   groups["Vital Pulp Therapy"].push(c);
+      else                                                  groups["Other / No Treatment"].push(c);
+    });
+    return Object.fromEntries(Object.entries(groups).filter(([, list]) => list.length > 0));
+  }, [filteredCases]);
+
+  const legacyCrackCases = useMemo(() => filteredCases.filter(c => isLegacyCrack(c)), [filteredCases]);
+
+  const inputCls = "w-full bg-[#0a1428] border border-white/10 rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-[#10b981]/50 transition-colors";
+
+  if (!user) return (
     <ProtectedRoute><Navigation />
       <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full border-2 border-[#10b981]/30 border-t-[#10b981] animate-spin" />
+        <p className="text-gray-400">Please log in to view your cases.</p>
       </div>
     </ProtectedRoute>
   );
 
-  // ── Derived display values ──
-  const urgency    = (result.urgency ?? "low") as Urgency;
-  const accent     = URGENCY_ACCENT[urgency];
-  const survival   = result.survivalPercentage ?? 0;
-  const range      = result.survivalRange ?? [survival - 3, survival + 3];
-  const isPractical = result.isPractical ?? false;
-  const iowa        = result.iowa;
-  const vrfFlag     = result.vrfFlag ?? false;
-  const isCombined  = result.toolType === "combined";
-  const dpiCfg      = getDPILabel(result.totalDPI ?? 0);
-  const sites       = result.sites ?? [];
-  const threshold   = result.threshold ?? 65;
-  const toothType   = result.toothType ?? "Molar";
-  const factors     = result.affectingFactors ?? [];
-  const inconsistencies = result.inconsistencyNotes ?? [];
+  const tabs: ActiveTab[] = ["All", "EndoDecide", "Crack Cases", "No Treatment", "In-Progress", "Done", "Postpone"];
 
-  // Iowa config
-  const iowaCfg = iowa ? IOWA_CONFIG[iowa.stage] : null;
-
-  // ════════════════════════════════════════════════════════════
-  // SAVE CASE — FIXED
-  // ════════════════════════════════════════════════════════════
-  const handleSaveCase = async () => {
-    if (!caseName.trim() || !phoneNumber.trim()) {
-      alert("Please fill in Case Name and Phone Number.");
-      return;
-    }
-    if (!user) { alert("Please log in to save cases."); return; }
-    if (saving) return;
-    setSaving(true);
-
-    // Synchronous flag — avoids relying on async setState to know if save succeeded
-    let saved = false;
-
-    try {
-      // ── Duplicate check ──
-      const q = query(
-        collection(db, "cases"),
-        where("userId",      "==", user.uid),
-        where("toothNumber", "==", result.toothNumber),
-        where("type",        "==", "endodecide")
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        for (const d of snap.docs) {
-          const ex = d.data();
-          if (
-            ex.survivalEstimate    === survival &&
-            ex.pulpalDiagnosis     === result.pulpalDiagnosis &&
-            ex.periapicalDiagnosis === result.periapicalDiagnosis
-          ) {
-            alert("This case was already saved. Check My Cases.");
-            setSaving(false);
-            return;
-          }
-        }
-      }
-
-      // ── Write to Firestore ──
-      await addDoc(collection(db, "cases"), {
-        // Identity
-        type:          "endodecide",
-        toolType:      result.toolType ?? "predictor",
-        caseName:      caseName.trim(),
-        phoneNumber:   phoneNumber.trim(),
-        followUpDate:  followUpDate || null,
-        furtherNote:   furtherNote.trim(),
-
-        // Patient
-        toothNumber:   result.toothNumber  ?? "",
-        toothType:     result.toothType    ?? "Molar",
-        gender:        result.gender       ?? "",
-        ageGroup:      result.ageGroup     ?? "",
-        asa:           result.formData?.medical ?? "0",
-
-        // Urgency
-        urgency,
-        casePresText:  result.casePresText ?? "",
-
-        // Diagnosis (AAE 2013)
-        pulpalDiagnosis:     result.pulpalDiagnosis     ?? "",
-        periapicalDiagnosis: result.periapicalDiagnosis ?? "",
-        inconsistencyNotes:  inconsistencies,
-
-        // Prognosis
-        survivalEstimate:    survival,
-        survivalRange:       range,
-        epPoints:            result.totalDPI    ?? 0,
-        isPractical,
-        threshold,
-        treatmentRec:        result.treatmentRec ?? "",
-        procedureCategory:   result.procedureCategory ?? "",
-        affectingFactors:    factors,
-        treatmentStatus:     "No Treatment",
-
-        // Structure
-        remainingStructure:  result.remainingPercent ?? 0,
-        walls:               result.walls    ?? {},
-        occlusal:            result.occlusal ?? "access_only",
-        ferrule:             result.ferrule  ?? {},
-
-        // Periodontal
-        periodontalStatus:   result.formData?.perio ?? "0",
-        sites:               sites,
-        deepCount:           result.deepCount ?? 0,
-
-        // Crack (present only when triggered)
-        crackPresent:    result.crackPresent    ?? false,
-        crackConfirmed:  result.crackConfirmed  ?? false,
-        crackMethods:    result.crackMethods    ?? {},
-        iowa:            iowa ?? null,
-        iowaStage:       iowa?.stage  ?? null,
-        iowaSuccessRate: iowa?.successRate ?? null,
-
-        // VRF
-        vrfFlag,
-
-        // Snapshot
-        patientInputs:    result.formData ?? {},
-        predictionResult: {
-          survivalPercentage:  survival,
-          survivalRange:       range,
-          totalDPI:            result.totalDPI ?? 0,
-          tier1:               result.tier1Deductions ?? 0,
-          tier2:               result.tier2Deductions ?? 0,
-          tier3:               result.tier3Deductions ?? 0,
-          affectingFactors:    factors,
-          pulpalDiagnosis:     result.pulpalDiagnosis,
-          periapicalDiagnosis: result.periapicalDiagnosis,
-          iowa,
-          vrfFlag,
-        },
-
-        userId:    user.uid,
-        createdAt: serverTimestamp(),
-        savedAt:   new Date().toISOString(),
-      });
-
-      // ── Mark success synchronously before any state updates ──
-      saved = true;
-
-      // ── Reset form state ──
-      setSaveSuccess(true);
-      setShowSaveModal(false);
-      setCaseName("");
-      setPhoneNumber("");
-      setFollowUpDate("");
-      setFurtherNote("");
-
-    } catch (err) {
-      console.error("Save failed:", err);
-      alert("Failed to save case. Please try again.");
-    } finally {
-      setSaving(false);
-      // ── localStorage removal is OUTSIDE the try block ──
-      // Any error here cannot trigger the catch above, and we
-      // only remove the entry when Firestore write was confirmed.
-      if (saved) {
-        try {
-          localStorage.removeItem("lastEndoDecideResult");
-        } catch {
-          // localStorage not available in this environment — safe to ignore
-        }
-      }
-    }
-  };
-
-  // ════════════════════════════════════════════════════════════
-  // PDF EXPORT
-  // ════════════════════════════════════════════════════════════
-  const exportAsPDF = async () => {
-    if (!result) return;
-    setIsGeneratingPDF(true);
-    try {
-      const html2pdfModule = await import("html2pdf.js");
-      const html2pdf = html2pdfModule.default || html2pdfModule;
-
-      const pdfDate    = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-      const verdictBg  = isPractical ? "#052e16" : "#450a0a";
-      const verdictBd  = isPractical ? "#10b981" : "#ef4444";
-      const verdictCol = isPractical ? "#10b981" : "#ef4444";
-
-      const factorRows = factors.map((f: string) =>
-        `<li style="padding:6px 0;border-bottom:1px solid #1e293b;font-size:12px;color:#e2e8f0;">• ${f}</li>`
-      ).join("");
-
-      const iowaBlock = iowa ? `
-        <div style="background:${iowaCfg?.bg.replace("bg-","").replace("/10","") ?? "#0d1a30"};border:2px solid ${
-          iowa.stage === "I" ? "#10b981" : iowa.stage === "II" ? "#f59e0b" : iowa.stage === "III" ? "#f97316" : "#ef4444"
-        };border-radius:12px;padding:20px;margin-bottom:16px;">
-          <p style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Iowa Classification — Krell & Caplan 2018</p>
-          <p style="font-size:28px;font-weight:900;color:${iowa.stage === "I" ? "#10b981" : iowa.stage === "II" ? "#f59e0b" : iowa.stage === "III" ? "#f97316" : "#ef4444"};margin:0;">Stage ${iowa.stage}</p>
-          <p style="color:#94a3b8;font-size:13px;margin-top:6px;">${iowa.label}</p>
-          <p style="color:#94a3b8;font-size:13px;margin-top:4px;">1-year success rate: <strong>${iowa.successRate}%</strong> — reported independently of EPP survival estimate</p>
-        </div>` : "";
-
-      const vrfBlock = vrfFlag ? `
-        <div style="background:#1a0808;border:2px solid #ef4444;border-radius:12px;padding:16px;margin-bottom:16px;">
-          <p style="font-size:16px;font-weight:900;color:#ef4444;margin:0;">⚠️ VRF Cannot Be Excluded</p>
-          <p style="color:#94a3b8;font-size:12px;margin-top:6px;">Previously root canal treated tooth with deep periodontal pocket or sinus tract and significant coronal structure loss. Direct visualization required before committing to treatment plan.</p>
-        </div>` : "";
-
-      const inconsistBlock = inconsistencies.length > 0 ? `
-        <div style="background:#1a1200;border:1px solid #92400e;border-radius:10px;padding:14px;margin-bottom:16px;">
-          ${inconsistencies.map((n: string) => `<p style="color:#fbbf24;font-size:12px;margin:4px 0;">⚠ ${n}</p>`).join("")}
-        </div>` : "";
-
-      const siteRows = sites.map((s: any) =>
-        `<li style="padding:5px 0;border-bottom:1px solid #1e293b;font-size:11px;color:${LEVEL_COLOR[s.level] ?? "#64748b"};">${s.label}: ${LEVEL_LABEL[s.level]}</li>`
-      ).join("");
-
-      const el = document.createElement("div");
-      el.innerHTML = `
-        <div style="font-family:system-ui,sans-serif;color:#e2e8f0;background:#0a1428;padding:40px 30px;line-height:1.6;">
-          <div style="text-align:center;margin-bottom:32px;">
-            <h1 style="font-size:32px;font-weight:900;color:#10b981;margin:0;">EndoDecide</h1>
-            <p style="color:#64748b;font-size:12px;letter-spacing:3px;text-transform:uppercase;margin-top:4px;">Clinical Decision Report</p>
-            <p style="color:#64748b;font-size:12px;margin-top:4px;">Tooth #${result.toothNumber} · ${result.toothType} · ${pdfDate}</p>
-          </div>
-
-          ${inconsistBlock}
-
-          <div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-bottom:16px;">
-            <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Clinical Summary</p>
-            <p style="font-size:13px;line-height:1.8;">${result.introParagraph ?? ""}</p>
-          </div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-            <div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;text-align:center;">
-              <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">4-Year Survival</p>
-              <p style="font-size:48px;font-weight:900;color:${survival >= 80 ? "#10b981" : survival >= 65 ? "#f59e0b" : "#ef4444"};margin:0;">${survival}%</p>
-              <p style="color:#64748b;font-size:11px;margin-top:4px;">Range: ${range[0]}–${range[1]}%</p>
-            </div>
-            <div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;text-align:center;">
-              <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">EP Points (DPI)</p>
-              <p style="font-size:48px;font-weight:900;color:#3b82f6;margin:0;">${result.totalDPI ?? 0}</p>
-              <p style="color:#64748b;font-size:11px;margin-top:4px;">${dpiCfg.label} Complexity</p>
-            </div>
-          </div>
-
-          <div style="background:${verdictBg};border:3px solid ${verdictBd};border-radius:16px;padding:20px;text-align:center;margin-bottom:16px;">
-            <p style="font-size:22px;font-weight:900;color:${verdictCol};margin:0;">${isPractical ? "✅ Practical to Retain" : "⚠️ Impractical to Retain"}</p>
-            <p style="color:#94a3b8;font-size:13px;margin-top:6px;">Threshold: ${threshold}% survival required for ${toothType}</p>
-          </div>
-
-          <div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-bottom:16px;">
-            <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Working Diagnosis (AAE 2013)</p>
-            <p style="font-size:16px;font-weight:700;color:#e2e8f0;">${result.pulpalDiagnosis ?? "—"}</p>
-            <p style="font-size:14px;color:#94a3b8;margin-top:4px;">${result.periapicalDiagnosis ?? "—"}</p>
-            ${result.treatmentRec ? `<p style="margin-top:12px;padding:10px 16px;background:#0a1428;border-radius:10px;font-size:14px;color:#10b981;">Treatment: ${result.treatmentRec}</p>` : ""}
-          </div>
-
-          ${factorRows ? `<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-bottom:16px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Factors Affecting Survivability</p><ul style="list-style:none;padding:0;margin:0;">${factorRows}</ul></div>` : ""}
-
-          ${iowaBlock}
-          ${vrfBlock}
-
-          ${sites.length > 0 ? `<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-bottom:16px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Periodontal Probing</p><ul style="list-style:none;padding:0;margin:0;">${siteRows}</ul></div>` : ""}
-
-          ${result.vptAgeNote ? `<div style="background:#0c1a0c;border:1px solid #166534;border-radius:12px;padding:16px;margin-bottom:12px;"><p style="font-size:12px;color:#86efac;">ℹ ${result.vptAgeNote}</p></div>` : ""}
-          ${result.medicationFlag ? `<div style="background:#1a1000;border:1px solid #78350f;border-radius:12px;padding:16px;margin-bottom:12px;"><p style="font-size:12px;color:#fbbf24;">⚠ ${result.medicationFlag}</p></div>` : ""}
-
-          <div style="margin-top:20px;padding:14px;border:1px solid #ef4444;border-radius:10px;text-align:center;">
-            <p style="color:#ef4444;font-size:11px;">Clinical decision support only. Always apply professional judgment. Iowa and EPP survival rates are independent metrics from different study populations — do not combine them.</p>
-          </div>
-          <p style="text-align:center;color:#475569;font-size:10px;margin-top:10px;">Generated by Endoprognosis · EndoDecide · ${pdfDate}</p>
-        </div>
-      `;
-
-      document.body.appendChild(el);
-      await html2pdf().from(el).set({
-        margin:     [10, 15, 10, 15] as [number, number, number, number],
-        filename:   `EndoDecide_Tooth${result.toothNumber}_${new Date().toISOString().slice(0,10)}.pdf`,
-        image:      { type: "jpeg" as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#0a1428" },
-        jsPDF:      { unit: "mm", format: "a4", orientation: "portrait" as const },
-      }).save();
-      document.body.removeChild(el);
-    } catch {
-      alert("Failed to generate PDF. Please try again.");
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
-
-  const inputCls = "w-full bg-[#0a1428] border border-white/15 rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#10b981] transition-colors";
-
-  // ── Navigate to restorative recommendation ──
-  const goToRestorative = () => {
-    if (!result?.toothNumber) return;
-    localStorage.setItem("restorativeData", JSON.stringify({
-      toothNumber:      result.toothNumber,
-      remainingPercent: result.remainingPercent ?? 100,
-      walls:            result.walls ?? {},
-      occlusal:         result.occlusal ?? "access_only",
-      ferrule:          result.ferrule ?? {},
-      oralHygiene:      result.formData?.oralHygiene ?? "0",
-      perio:            result.formData?.perio ?? "0",
-      fullResult:       result,
-      sourceRoute:      "/endodecide/result",
-    }));
-    router.push("/restorative");
-  };
-
-  // ════════════════════════════════════════════════════════════
-  // RENDER
-  // ════════════════════════════════════════════════════════════
   return (
     <ProtectedRoute>
       <Navigation />
       <div className="min-h-screen bg-[#0a1428] text-white pb-20">
 
-        {/* ── HERO — urgency-reactive ── */}
-        <div className="relative h-[240px] md:h-[280px] overflow-hidden"
-          style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')", backgroundSize: "cover", backgroundPosition: "center" }}>
-          <div className="absolute inset-0"
-            style={{
-              background: urgency === "low"
-                ? "linear-gradient(to bottom, rgba(6,78,59,0.7), rgba(10,20,40,0.95))"
-                : urgency === "medium"
-                ? "linear-gradient(to bottom, rgba(120,53,15,0.7), rgba(10,20,40,0.95))"
-                : "linear-gradient(to bottom, rgba(127,29,29,0.7), rgba(10,20,40,0.95))"
-            }} />
-          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
-            <p className="text-[11px] tracking-[4px] uppercase mb-2" style={{ color: accent + "99" }}>
-              EndoDecide Report
-            </p>
-            <h1 className="text-3xl md:text-4xl font-bold mb-2"
-              style={{
-                fontFamily: "Playfair Display, serif",
-                background: `linear-gradient(135deg, ${accent}, white, ${accent})`,
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}>
-              Clinical Decision Summary
-            </h1>
-            <p className="text-gray-300 text-sm">
-              Tooth <span className="font-bold" style={{ color: accent }}>#{result.toothNumber}</span>
-              {" · "}<span className="text-gray-400">{result.toothType}</span>
-              {" · "}<span className="text-gray-500 text-xs">{result.casePresText}</span>
-            </p>
-            {isCombined && (
-              <div className="mt-3 flex items-center gap-2 bg-orange-500/15 border border-orange-500/30 text-orange-400 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-                  <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-                Combined — Prognosis & Iowa Classification
+        {/* ── HEADER ── */}
+        <div className="border-b border-white/8 bg-[#0d1a30]/60 backdrop-blur-sm px-4 sm:px-6 py-8">
+          <div className="max-w-6xl mx-auto">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
+              <div>
+                <p className="text-[10px] text-[#10b981]/60 tracking-[3px] uppercase mb-1">Case Management</p>
+                <h1 className="text-3xl font-bold text-white" style={{ fontFamily: "Playfair Display, serif" }}>
+                  My Cases
+                </h1>
+                <p className="text-gray-500 text-sm mt-1">
+                  {loading ? "Loading..." : totalCount !== null
+                    ? `${cases.length} of ${totalCount} cases loaded`
+                    : `${cases.length} cases loaded`}
+                </p>
               </div>
-            )}
+              <div className="relative w-full md:w-80">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <input type="text" placeholder="Search cases..." value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)} className={inputCls} />
+                {searchTerm && (
+                  <button onClick={() => setSearchTerm("")}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400 transition-colors text-xs">✕</button>
+                )}
+              </div>
+            </div>
+
+            {/* ── TABS ── */}
+            <div className="flex flex-wrap gap-2 mt-6">
+              {tabs.map(tab => {
+                const isEndo = tab === "EndoDecide";
+                const isCrack = tab === "Crack Cases";
+                return (
+                  <button key={tab} onClick={() => setActiveTab(tab)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all ${
+                      activeTab === tab
+                        ? isEndo
+                          ? "bg-[#10b981] border-[#10b981] text-black"
+                          : "bg-[#10b981] border-[#10b981] text-black"
+                        : isEndo
+                          ? "bg-[#10b981]/10 border-[#10b981]/25 text-[#10b981] hover:bg-[#10b981]/20"
+                          : "bg-white/4 border-white/10 text-gray-400 hover:border-white/25 hover:text-gray-300"
+                    }`}>
+                    {isEndo && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+                    {isCrack ? "🦷 " : ""}
+                    {tab}
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                      activeTab === tab ? "bg-black/20 text-black/70" : "bg-white/8 text-gray-500"
+                    }`}>
+                      {tabCounts[tab]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* ── CONTENT ── */}
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
 
-          {/* Back */}
-          <button onClick={() => router.push("/endodecide")}
-            className="flex items-center gap-2 text-gray-500 hover:text-[#10b981] text-sm transition-colors">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            New case
-          </button>
-
-          {/* Save success */}
-          {saveSuccess && (
-            <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-5 py-3 rounded-2xl text-sm font-medium">
+          {error && (
+            <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/25 text-red-400 px-4 py-3 rounded-2xl text-sm mb-6">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-              </svg>
-              Case saved — view it in My Cases.
-            </div>
-          )}
-
-          {/* Inconsistency alerts */}
-          <InconsistencyAlert notes={inconsistencies} />
-
-          {/* ── PANEL 1: CLINICAL SUMMARY ── */}
-          <Panel title="Clinical Summary" accent={accent}>
-            {result.introParagraph && (
-              <p className="text-sm text-gray-300 leading-relaxed mb-0"
-                dangerouslySetInnerHTML={{ __html: result.introParagraph }} />
-            )}
-          </Panel>
-
-          {/* ── PANEL 2: PROGNOSIS ── */}
-          <Panel title="Endodontic Prognosis — 4-Year Survival" accent={accent}>
-
-            {/* Main metrics */}
-            <div className="grid md:grid-cols-2 gap-5 mb-5">
-              <div className="flex flex-col items-center justify-center bg-white/3 rounded-2xl p-5">
-                <SurvivalGauge value={survival} range={range} accent={accent} />
-              </div>
-              <div className="bg-white/3 rounded-2xl p-5 flex flex-col justify-between">
-                <p className="text-[10px] text-gray-500 tracking-[2px] uppercase mb-4">EP Points (Dental Prognosis Index)</p>
-                <DPIBar value={result.totalDPI ?? 0} />
-              </div>
-            </div>
-
-            {/* Verdict */}
-            <div className={`rounded-2xl p-5 border-2 mb-4 ${
-              isPractical
-                ? "bg-emerald-500/8 border-emerald-500/40"
-                : "bg-red-500/8 border-red-500/40"
-            }`}>
-              <div className="flex items-start justify-between flex-wrap gap-3">
-                <div>
-                  <p className={`text-2xl font-black ${isPractical ? "text-emerald-400" : "text-red-400"}`}>
-                    {isPractical ? "✅ Practical to Retain" : "⚠️ Impractical to Retain"}
-                  </p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {isPractical
-                      ? `Survival (${survival}%) meets the ${threshold}% threshold for ${toothType} retention.`
-                      : `Survival (${survival}%) falls below the ${threshold}% threshold for ${toothType} retention.`}
-                  </p>
-                </div>
-                <span className={`text-xs font-bold uppercase tracking-widest px-3 py-1.5 rounded-full border ${
-                  isPractical
-                    ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
-                    : "bg-red-500/15 border-red-500/30 text-red-400"
-                }`}>{toothType}</span>
-              </div>
-              {result.explanationNote && (
-                <p className="text-sm text-gray-400 mt-4 pt-4 border-t border-white/8 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: result.explanationNote }} />
-              )}
-              {result.isImpracticalOverride && result.overrideReason && (
-                <div className="mt-3 flex items-start gap-2 bg-orange-500/10 border border-orange-500/25 rounded-xl px-3 py-2.5">
-                  <p className="text-xs text-orange-400 leading-relaxed">{result.overrideReason}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Tier breakdown toggle */}
-            <button
-              onClick={() => setShowTierBreakdown(v => !v)}
-              className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors mb-2"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
-                className={`transition-transform ${showTierBreakdown ? "rotate-180" : ""}`}>
-                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              {showTierBreakdown ? "Hide" : "Show"} score breakdown
-            </button>
-            {showTierBreakdown && (
-              <TierBreakdown
-                baseline={result.periapicalDiagnosis !== "Normal Apical Tissues" ? 87 : 92}
-                t1={result.tier1Deductions ?? 0}
-                t2={result.tier2Deductions ?? 0}
-                t3={result.tier3Deductions ?? 0}
-              />
-            )}
-          </Panel>
-
-          {/* ── PANEL 3: DIAGNOSIS ── */}
-          <Panel title="Working Diagnosis — AAE 2013" accent="#3b82f6">
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
-              <div className="bg-white/4 rounded-2xl p-4">
-                <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Pulpal Diagnosis</p>
-                <p className="text-sm font-bold text-white">{result.pulpalDiagnosis ?? "—"}</p>
-              </div>
-              <div className="bg-white/4 rounded-2xl p-4">
-                <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1">Periapical Diagnosis</p>
-                <p className="text-sm font-bold text-white">{result.periapicalDiagnosis ?? "—"}</p>
-              </div>
-            </div>
-
-            {result.treatmentRec && isPractical && (
-              <div className="flex items-center gap-3 rounded-2xl px-4 py-3 border"
-                style={{ background: accent + "12", borderColor: accent + "40" }}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 8h10M9 4l4 4-4 4" stroke={accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                <div>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider">Recommended Treatment</p>
-                  <p className="text-sm font-bold" style={{ color: accent }}>{result.treatmentRec}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Derivation logic visible to clinician */}
-            <div className="mt-4 bg-white/2 border border-white/6 rounded-2xl p-4">
-              <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">How the diagnosis was derived</p>
-              <div className="space-y-1.5">
-                {[
-                  result.formData?.rootTreated === "yes" && { label: "Root canal treated tooth", value: "→ Previously Treated" },
-                  result.formData?.rootAccessed === "yes" && { label: "Treatment initiated but incomplete", value: "→ Previously Initiated Therapy" },
-                  result.formData?.coldTest === "none" && { label: "No cold test response", value: "→ Pulp Necrosis axis" },
-                  result.formData?.coldTest === "lingering_long" && { label: "Cold response lingering >30 seconds", value: "→ Irreversible Pulpitis" },
-                  result.formData?.spontaneous === "yes" && { label: "Spontaneous pain present", value: "→ Irreversible Pulpitis" },
-                  result.formData?.nocturnal === "yes" && { label: "Nocturnal pain (wakes patient)", value: "→ Irreversible Pulpitis" },
-                  result.formData?.swelling === "yes" && { label: "Swelling present (priority rule)", value: "→ Acute Apical Abscess" },
-                  result.formData?.sinus === "yes" && { label: "Sinus tract present", value: "→ Chronic Apical Abscess" },
-                  result.formData?.percussion === "yes" && { label: "Percussion tenderness", value: "→ Periapical axis" },
-                  result.formData?.palpation === "yes" && { label: "Palpation tenderness", value: "→ Periapical axis" },
-                  result.formData?.periApical === "yes" && { label: "Periapical lesion on radiograph", value: "→ Periapical involvement" },
-                ].filter(Boolean).map((item: any, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500">{item.label}</span>
-                    <span className="text-[#10b981] font-semibold">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Panel>
-
-          {/* ── PANEL 4: AFFECTING FACTORS ── */}
-          {factors.length > 0 && (
-            <Panel title="Factors Affecting Survivability" accent="#f59e0b">
-              <div className="space-y-2">
-                {factors.map((factor: string, i: number) => {
-                  const sev = getFactorSeverity(factor);
-                  return (
-                    <div key={i} className="flex items-start gap-3 px-4 py-3 bg-white/3 rounded-xl border border-white/6">
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${sev.dot}`} />
-                      <p className="text-sm text-gray-300 flex-1">{factor}</p>
-                      <span className={`text-[9px] font-bold uppercase tracking-wider flex-shrink-0 px-2 py-0.5 rounded-full ${sev.badge}`}>
-                        {sev.weight}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Panel>
-          )}
-
-          {/* ── PANEL 5A: IOWA CLASSIFICATION (conditional) ── */}
-          {iowa && iowaCfg && result.crackConfirmed && (
-            <Panel title="Iowa Classification — Krell & Caplan 2018" accent="#f97316" conditional>
-
-              {/* Important disclaimer */}
-              <div className="flex items-start gap-3 bg-blue-500/8 border border-blue-500/20 rounded-2xl px-4 py-3 mb-5">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-blue-400 flex-shrink-0 mt-0.5">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
-                  <path d="M8 7v4M8 5.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-                <p className="text-xs text-blue-300 leading-relaxed">
-                  The Iowa success rate ({iowa.successRate}%) and the EPP survival estimate ({survival}%) come from different study populations with different follow-up periods and outcome definitions.
-                  <strong className="text-blue-200"> They are reported independently and must not be mathematically combined.</strong>
-                </p>
-              </div>
-
-              {/* Stage verdict */}
-              <div className={`${iowaCfg.bg} border-2 ${iowaCfg.border} rounded-2xl p-5 mb-5`}>
-                <div className="flex items-start justify-between flex-wrap gap-4">
-                  <div>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Iowa Stage</p>
-                    <p className={`text-5xl font-black ${iowaCfg.color}`}>{iowa.stage}</p>
-                    <p className={`text-sm font-semibold ${iowaCfg.color} mt-1`}>{iowaCfg.label}</p>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">{iowa.label}</p>
-                  </div>
-                  <IowaGauge successRate={iowa.successRate} />
-                </div>
-              </div>
-
-              {/* Iowa stage reference table */}
-              <div className="grid grid-cols-4 gap-2 mb-4">
-                {[
-                  { stage: "I",   rate: 93, pct: "37% of cases" },
-                  { stage: "II",  rate: 84, pct: "39% of cases" },
-                  { stage: "III", rate: 69, pct: "15% of cases" },
-                  { stage: "IV",  rate: 41, pct: "8% of cases"  },
-                ].map(s => {
-                  const isCurrent = s.stage === iowa.stage;
-                  const color = s.rate >= 80 ? "#10b981" : s.rate >= 65 ? "#f59e0b" : s.rate >= 50 ? "#f97316" : "#ef4444";
-                  return (
-                    <div key={s.stage} className={`rounded-xl p-3 text-center border transition-all ${
-                      isCurrent ? "border-white/30 bg-white/8 scale-105 shadow-lg" : "border-white/5 bg-white/3"
-                    }`}>
-                      <p className="text-[9px] text-gray-600 mb-1 uppercase">Stage {s.stage}</p>
-                      <p className="text-xl font-black" style={{ color }}>{s.rate}%</p>
-                      <p className="text-[9px] text-gray-600 mt-0.5">{s.pct}</p>
-                      {isCurrent && <p className="text-[8px] text-white/40 mt-0.5">← current</p>}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Crack confirmation methods */}
-              {result.crackMethods && (
-                <div>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">Confirmation Methods Used</p>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { key: "transillum", icon: "💡", label: "Transillumination" },
-                      { key: "methBlue",   icon: "🔵", label: "Methylene Blue" },
-                      { key: "direct",     icon: "🔬", label: "Direct Visualization" },
-                    ].map(m => {
-                      const used = result.crackMethods[m.key];
-                      return (
-                        <div key={m.key} className={`rounded-xl p-3 text-center border ${
-                          used ? "bg-emerald-500/10 border-emerald-500/25" : "bg-white/3 border-white/8"
-                        }`}>
-                          <p className="text-base mb-1">{m.icon}</p>
-                          <p className={`text-[10px] font-bold ${used ? "text-emerald-400" : "text-gray-600"}`}>{m.label}</p>
-                          <p className={`text-[9px] mt-0.5 ${used ? "text-emerald-500" : "text-gray-700"}`}>
-                            {used ? "Confirmed" : "Not used"}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <p className="text-[10px] text-gray-600 mt-4 leading-relaxed">
-                1-year success rates for orthograde root canal treatment — Krell & Caplan, J Endod 2018 (n=363 cracked teeth).
-              </p>
-            </Panel>
-          )}
-
-          {/* Crack suspected but not confirmed */}
-          {result.crackPresent && !result.crackConfirmed && (
-            <div className="flex items-start gap-3 bg-amber-500/10 border-2 border-amber-500/30 rounded-2xl px-5 py-4">
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="text-amber-400 flex-shrink-0 mt-0.5">
-                <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4"/>
                 <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
               </svg>
-              <div>
-                <p className="text-sm font-bold text-amber-400 mb-1">Crack Suspected — Iowa Classification Not Applied</p>
-                <p className="text-xs text-amber-300/80 leading-relaxed">
-                  A crack was reported but not confirmed by transillumination, methylene blue, or direct visualization.
-                  Iowa staging requires confirmed crack visualization. Findings are recorded but no stage has been assigned.
-                </p>
-              </div>
+              {error}
             </div>
           )}
 
-          {/* ── PANEL 5B: VRF FLAG (conditional) ── */}
-          {vrfFlag && (
-            <Panel title="Vertical Root Fracture Alert" accent="#ef4444" conditional>
-              <div className="bg-red-500/10 border-2 border-red-500/30 rounded-2xl p-5 mb-4">
-                <p className="text-xl font-black text-red-400 mb-2">⚠️ VRF Cannot Be Excluded</p>
-                <p className="text-sm text-gray-300 leading-relaxed">
-                  This tooth is previously root canal treated with a deep periodontal pocket or sinus tract present,
-                  and more than 50% of coronal structure is lost. This combination raises significant concern for
-                  vertical root fracture.
-                </p>
-              </div>
-              <div className="space-y-2">
-                {[
-                  "VRF cannot be confirmed without direct or microscopic visualization during treatment or exploratory surgery",
-                  "CBCT has limited and variable reliability for VRF detection — a negative CBCT does not rule out VRF",
-                  "Direct visualization required before committing to the treatment plan",
-                  "The patient should be informed of this possibility and provide informed consent before treatment begins",
-                ].map((note, i) => (
-                  <div key={i} className="flex items-start gap-2 px-3 py-2 bg-white/3 rounded-xl">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
-                    <p className="text-xs text-gray-400 leading-relaxed">{note}</p>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-          )}
+          {loading && <div className="space-y-3">{[1,2,3,4,5].map(i => <SkeletonCard key={i} />)}</div>}
 
-          {/* ── CORONAL STRUCTURE ── */}
-          {result.walls && (
-            <Panel title="Coronal Structure Assessment" accent="#10b981">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-2xl font-black text-[#10b981]">{result.remainingPercent ?? 0}% remaining</span>
-                <span className="text-xs text-gray-500">{100 - (result.remainingPercent ?? 0)}% lost</span>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                {(Object.entries(result.walls) as [string, string][]).map(([wall, state]) => (
-                  <div key={wall} className={`rounded-xl p-3 text-center border ${
-                    state === "intact"   ? "bg-emerald-500/10 border-emerald-500/25" :
-                    state === "moderate" ? "bg-amber-500/10 border-amber-500/25" :
-                                          "bg-red-500/10 border-red-500/25"
-                  }`}>
-                    <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1 capitalize">{wall}</p>
-                    <p className={`text-xs font-bold capitalize ${
-                      state === "intact" ? "text-emerald-400" : state === "moderate" ? "text-amber-400" : "text-red-400"
-                    }`}>{state}</p>
-                  </div>
-                ))}
-              </div>
-              {result.ferrule?.label && (
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${
-                  result.ferrule.wallsWithFerrule >= 4 ? "bg-emerald-500/8 border-emerald-500/20 text-emerald-400" :
-                  result.ferrule.wallsWithFerrule >= 3 ? "bg-amber-500/8 border-amber-500/20 text-amber-400" :
-                                                         "bg-red-500/8 border-red-500/20 text-red-400"
-                }`}>
-                  <span>⬡</span>
-                  <span>{result.ferrule.label}</span>
-                </div>
-              )}
-            </Panel>
-          )}
-
-          {/* ── PROBING MAP ── */}
-          {sites.length > 0 && (
-            <Panel title="Periodontal Probing Map" accent="#3b82f6">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-                {sites.map((s: any) => {
-                  const color = LEVEL_COLOR[s.level] ?? "#64748b";
-                  return (
-                    <div key={s.id} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border"
-                      style={{ background: color + "10", borderColor: color + "30" }}>
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                      <div>
-                        <p className="text-xs font-semibold text-white">{s.label}</p>
-                        <p className="text-[10px]" style={{ color }}>{LEVEL_LABEL[s.level]}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "Normal",     count: sites.filter((s: any) => s.level === "normal").length,     color: "#10b981" },
-                  { label: "Attachment", count: sites.filter((s: any) => s.level === "attachment").length, color: "#f59e0b" },
-                  { label: "Deep ≥5mm",  count: sites.filter((s: any) => s.level === "deep").length,       color: "#ef4444" },
-                ].map(s => (
-                  <div key={s.label} className="text-center rounded-xl py-2 border"
-                    style={{ background: s.color + "10", borderColor: s.color + "25" }}>
-                    <p className="text-xl font-black" style={{ color: s.color }}>{s.count}</p>
-                    <p className="text-[9px] text-gray-600 uppercase tracking-wider">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-          )}
-
-          {/* ── CONTEXTUAL NOTES ── */}
-          {(result.vptAgeNote || result.medicationFlag) && (
-            <div className="space-y-3">
-              {result.vptAgeNote && (
-                <div className="flex items-start gap-3 bg-emerald-500/8 border border-emerald-500/25 rounded-2xl px-4 py-3.5">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-emerald-400 flex-shrink-0 mt-0.5">
-                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
-                    <path d="M8 7v4M8 5.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                  </svg>
-                  <p className="text-sm text-emerald-300 leading-relaxed">{result.vptAgeNote}</p>
-                </div>
-              )}
-              {result.medicationFlag && (
-                <div className="flex items-start gap-3 bg-amber-500/8 border border-amber-500/25 rounded-2xl px-4 py-3.5">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-amber-400 flex-shrink-0 mt-0.5">
-                    <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-                    <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                  </svg>
-                  <p className="text-sm text-amber-300 leading-relaxed">{result.medicationFlag}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── ACTIONS ── */}
-          <div className="grid md:grid-cols-2 gap-4">
-            {user ? (
-              <button onClick={() => setShowSaveModal(true)}
-                className="flex items-center justify-center gap-2 font-bold py-4 rounded-2xl text-sm transition-all hover:-translate-y-0.5 shadow-lg text-black"
-                style={{ background: accent, boxShadow: `0 8px 24px ${accent}30` }}>
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 2h8l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1Z" stroke="currentColor" strokeWidth="1.4"/>
-                  <path d="M5 2v4h6V2M5 9h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-                Save Case
-              </button>
-            ) : (
-              <button onClick={() => router.push("/login")}
-                className="flex items-center justify-center gap-2 bg-white/8 hover:bg-white/15 border border-white/20 text-gray-400 font-bold py-4 rounded-2xl text-sm transition-all">
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                  <rect x="3" y="7" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.4"/>
-                  <path d="M5 7V5a3 3 0 016 0v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-                Sign In to Save
-              </button>
-            )}
-            <button onClick={exportAsPDF} disabled={isGeneratingPDF}
-              className="flex items-center justify-center gap-2 bg-white/8 hover:bg-white/15 border border-white/15 font-semibold py-4 rounded-2xl text-sm transition-all disabled:opacity-50">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <path d="M4 1h6l4 4v9a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1Z" stroke="currentColor" strokeWidth="1.4"/>
-                <path d="M8 6v6M5 9l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          {!loading && filteredCases.length === 0 && (
+            <div className="text-center py-24">
+              <svg className="mx-auto mb-4 opacity-20" width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M16 18h16M16 24h16M16 30h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
-              {isGeneratingPDF ? "Generating..." : "Export PDF"}
-            </button>
-          </div>
-
-          {/* ── RESTORATIVE RECOMMENDATION BUTTON (only when practical) ── */}
-          {isPractical && (
-            <button onClick={goToRestorative}
-              className="w-full flex items-center justify-center gap-3 bg-[#0f6cbd]/20 hover:bg-[#0f6cbd]/35 border border-[#0f6cbd]/40 hover:border-[#0f6cbd] text-[#60a5fa] font-bold py-4 rounded-2xl text-sm transition-all">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.4"/>
-                <path d="M5 8h6M8 5v6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              </svg>
-              View Restorative Recommendation
-            </button>
-          )}
-
-          <p className="text-center text-xs text-gray-600 leading-relaxed">
-            ⚠️ Clinical decision support only. Always apply professional judgment.<br />
-            AAE 2013 terminology · Iowa Classification (Krell & Caplan 2018)
-          </p>
-        </div>
-
-        {/* ── SAVE MODAL ── */}
-        {showSaveModal && (
-          <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] px-4">
-            <div className="bg-[#0d1a30] rounded-3xl p-6 md:p-8 max-w-md w-full border border-white/15">
-              <h3 className="text-xl font-bold mb-1" style={{ color: accent }}>Save Case</h3>
-              <p className="text-xs text-gray-500 mb-6">
-                {isCombined ? "Combined EndoDecide case — prognosis + Iowa classification" : "EndoDecide prognosis case"}
+              <p className="text-gray-500 text-sm">
+                {debouncedSearch ? `No cases match "${debouncedSearch}"` : "No cases in this category yet"}
               </p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
-                    Case Name <span className="text-red-400">*</span>
-                  </label>
-                  <input type="text" value={caseName} onChange={e => setCaseName(e.target.value)}
-                    className={inputCls} placeholder={`e.g. Ahmed — Tooth ${result.toothNumber ?? ""}`} />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
-                    Phone Number <span className="text-red-400">*</span>
-                  </label>
-                  <input type="tel" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
-                    className={inputCls} placeholder="+966 50 123 4567" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Follow-up Date</label>
-                  <input type="date" value={followUpDate} onChange={e => setFollowUpDate(e.target.value)}
-                    className={inputCls} />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Further Notes</label>
-                  <textarea value={furtherNote} onChange={e => setFurtherNote(e.target.value)}
-                    className={inputCls + " h-20 resize-y"}
-                    placeholder="Clinical observations, follow-up notes..." />
-                </div>
+            </div>
+          )}
+
+          {/* ── LEGACY CRACK CASES tab ── */}
+          {!loading && activeTab === "Crack Cases" && legacyCrackCases.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-px flex-1 bg-white/8" />
+                <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
+                  Legacy Crack Classifier Cases
+                </span>
+                <div className="h-px flex-1 bg-white/8" />
               </div>
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowSaveModal(false)}
-                  className="flex-1 py-3.5 bg-white/8 hover:bg-white/15 rounded-2xl text-sm font-semibold transition-all">
-                  Cancel
-                </button>
-                <button onClick={handleSaveCase}
-                  disabled={saving || !caseName.trim() || !phoneNumber.trim()}
-                  className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-black disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
-                  style={{ background: accent }}>
-                  {saving
-                    ? <><div className="w-4 h-4 rounded-full border-2 border-black/30 border-t-black animate-spin" />Saving...</>
-                    : "Save Case"}
-                </button>
+              {legacyCrackCases.map(c => (
+                <CaseCard key={c.id} c={c} userId={user.uid} expanded={expandedId === c.id}
+                  onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                  onOpen={() => router.push(`/cases/${c.id}`)}
+                  onStatusUpdated={handleStatusUpdated}
+                  onDeleted={handleDeleted}
+                  onFieldUpdated={handleFieldUpdated}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* ── ALL OTHER CASES grouped by treatment ── */}
+          {!loading && activeTab !== "Crack Cases" && Object.entries(categorizedCases).map(([category, list]) => (
+            <div key={category} className="mb-10">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-px flex-1 bg-white/8" />
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+                  {category}
+                  <span className="ml-2 text-gray-700">({list.length})</span>
+                </span>
+                <div className="h-px flex-1 bg-white/8" />
+              </div>
+              <div className="space-y-3">
+                {list.map(c => (
+                  <CaseCard key={c.id} c={c} userId={user.uid} expanded={expandedId === c.id}
+                    onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                    onOpen={() => router.push(`/cases/${c.id}`)}
+                    onStatusUpdated={handleStatusUpdated}
+                    onDeleted={handleDeleted}
+                    onFieldUpdated={handleFieldUpdated}
+                  />
+                ))}
               </div>
             </div>
-          </div>
-        )}
+          ))}
 
-        <div className="border-t border-white/8 bg-black/40 py-6 text-center mt-10">
-          <p className="text-xs text-gray-600">© 2026 Endoprognosis · All Rights Reserved</p>
+          {/* ── LOAD MORE ── */}
+          {!loading && hasMore && (
+            <div className="flex justify-center mt-10">
+              <button onClick={() => loadCases(true)} disabled={loadingMore}
+                className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/25 px-8 py-3.5 rounded-full text-sm font-semibold transition-all disabled:opacity-50">
+                {loadingMore
+                  ? <><span className="w-4 h-4 rounded-full border-2 border-white/20 border-t-white/60 animate-spin" />Loading...</>
+                  : <>Load More Cases<span className="text-gray-600 text-xs ml-1">({totalCount ? totalCount - cases.length : "?"} remaining)</span></>}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </ProtectedRoute>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// INLINE EDIT FIELD
+// ════════════════════════════════════════════════════════════
+function EditableField({ label, value, field, caseId, type = "text", options, onSaved }: {
+  label: string; value: string | null | undefined; field: string; caseId: string;
+  type?: "text" | "textarea" | "date" | "select"; options?: string[];
+  onSaved: (field: string, val: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(value ?? "");
+  const [saving, setSaving]   = useState(false);
+  const inputRef = useRef<any>(null);
+
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "cases", caseId), { [field]: draft });
+      onSaved(field, draft);
+      setEditing(false);
+    } catch {}
+    finally { setSaving(false); }
+  };
+
+  const cancel = () => { setDraft(value ?? ""); setEditing(false); };
+  const cls = "w-full bg-[#0a1428] border border-[#10b981]/50 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#10b981] transition-colors";
+
+  return (
+    <div className="group">
+      <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">{label}</p>
+      {editing ? (
+        <div className="flex items-start gap-1.5">
+          {type === "textarea" ? (
+            <textarea ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)} className={cls + " resize-none h-16"} />
+          ) : type === "select" && options ? (
+            <select ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)} className={cls}>
+              <option value="">—</option>
+              {options.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          ) : (
+            <input ref={inputRef} type={type} value={draft} onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+              className={cls} />
+          )}
+          <div className="flex gap-1 flex-shrink-0 mt-0.5">
+            <button onClick={save} disabled={saving}
+              className="w-6 h-6 rounded-md bg-[#10b981] flex items-center justify-center hover:bg-[#0ea76e] transition-colors disabled:opacity-50">
+              {saving
+                ? <span className="w-3 h-3 rounded-full border border-black/30 border-t-black/80 animate-spin" />
+                : <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.5 2.5L9 1" stroke="#000" strokeWidth="1.6" strokeLinecap="round"/></svg>}
+            </button>
+            <button onClick={cancel} className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors">
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1L1 7" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => { setDraft(value ?? ""); setEditing(true); }} className="flex items-center gap-1.5 w-full text-left group/field">
+          <p className="text-xs text-gray-300 flex-1">{value || <span className="text-gray-600 italic">tap to add</span>}</p>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"
+            className="text-gray-700 group-hover/field:text-[#10b981] transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100">
+            <path d="M8 2l2 2-6 6H2V8L8 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// CASE CARD
+// ════════════════════════════════════════════════════════════
+function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDeleted, onFieldUpdated }: {
+  c: SavedCase; userId: string; expanded: boolean;
+  onToggle: () => void; onOpen: () => void;
+  onStatusUpdated: (id: string, next: TreatmentStatus) => void;
+  onDeleted: (id: string) => void;
+  onFieldUpdated: (id: string, fields: Partial<SavedCase>) => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting]           = useState(false);
+
+  const endo    = isEndoDecide(c);
+  const crack   = isLegacyCrack(c);
+  const legacy  = isLegacyPredictor(c);
+  const survival = c.survivalEstimate;
+  const survColor = survivalColor(survival);
+  const urgAccent = endo && c.urgency ? URGENCY_ACCENT[c.urgency] : "#10b981";
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, "cases", c.id));
+      onDeleted(c.id);
+    } catch { setDeleting(false); setConfirmDelete(false); }
+  };
+
+  const handleSaved = (field: string, val: string) => {
+    onFieldUpdated(c.id, { [field]: val } as Partial<SavedCase>);
+  };
+
+  const handleInlineStatusChange = async (e: React.MouseEvent, s: TreatmentStatus) => {
+    e.stopPropagation();
+    if (c.treatmentStatus === s) return;
+    try {
+      await updateDoc(doc(db, "cases", c.id), { treatmentStatus: s });
+      if (s === "Done" || s === "In-Progress") {
+        await applyProfitFields(userId, c.id, c.treatmentRec, c.toothType, s);
+      }
+      onStatusUpdated(c.id, s);
+    } catch (err) { console.error("Inline status change failed:", err); }
+  };
+
+  return (
+    <div className={`bg-[#0d1a30] border rounded-2xl overflow-hidden transition-all duration-200 ${
+      expanded
+        ? endo ? "border-[#10b981]/30" : "border-[#10b981]/20"
+        : "border-white/8 hover:border-white/15"
+    }`}>
+
+      {/* ── CARD HEADER ── */}
+      <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={onToggle}>
+
+        {/* Left metric */}
+        <div className="flex-shrink-0 w-16 text-center">
+          {crack ? (
+            <span className="text-2xl">🦷</span>
+          ) : survival !== undefined ? (
+            <>
+              <p className={`text-xl font-black leading-none ${survColor}`}>{survival}%</p>
+              <p className="text-[9px] text-gray-600 mt-0.5">survival</p>
+            </>
+          ) : (
+            <p className="text-gray-600 text-xs">—</p>
+          )}
+        </div>
+
+        <div className="w-px h-10 bg-white/8 flex-shrink-0" />
+
+        {/* Main info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-white text-sm truncate">{c.caseName}</p>
+
+            {/* EndoDecide badge */}
+            {endo && (
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border"
+                style={{ background: urgAccent + "15", borderColor: urgAccent + "40", color: urgAccent }}>
+                EndoDecide
+              </span>
+            )}
+
+            {/* Iowa stage badge (EndoDecide combined or legacy crack) */}
+            {(c.iowaStage) && (
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/25 text-orange-400">
+                Iowa {c.iowaStage}
+              </span>
+            )}
+
+            {/* VRF flag */}
+            {(c.vrfFlag || c.isVRF) && (
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 border border-red-500/25 text-red-400">
+                ⚠ VRF
+              </span>
+            )}
+
+            {/* Practical / impractical */}
+            {!crack && c.isPractical !== undefined && (
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                c.isPractical ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
+              }`}>
+                {c.isPractical ? "✅ Retain" : "⚠️ Impractical"}
+              </span>
+            )}
+
+            {/* Legacy tag */}
+            {legacy && (
+              <span className="text-[9px] text-gray-600 px-2 py-0.5 rounded-full bg-white/5 border border-white/8">
+                Legacy
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
+            <span>🦷 #{c.toothNumber} · {c.toothType}</span>
+            {c.phoneNumber && <span>📞 {c.phoneNumber}</span>}
+            {c.gender && <span>{c.gender === "Male" ? "♂" : "♀"} {c.ageGroup || ""}</span>}
+            {c.pulpalDiagnosis && <span className="text-gray-600">· {c.pulpalDiagnosis}</span>}
+          </p>
+        </div>
+
+        {/* Status controls */}
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <StatusBadge status={c.treatmentStatus} />
+          <QuickStatusButton
+            caseId={c.id} current={c.treatmentStatus}
+            treatmentRec={c.treatmentRec} toothType={c.toothType}
+            userId={userId} onUpdated={onStatusUpdated}
+          />
+        </div>
+
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+          className={`flex-shrink-0 text-gray-600 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* ── EXPANDED DETAIL ── */}
+      {expanded && (
+        <div className="border-t border-white/8 px-5 py-5 space-y-5">
+
+          <div className="flex items-center gap-2 text-[10px] text-gray-600">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+              <path d="M8 2l2 2-6 6H2V8L8 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+            </svg>
+            Click any field to edit inline
+          </div>
+
+          {/* Patient fields */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <EditableField label="Case Name"      field="caseName"     caseId={c.id} value={c.caseName}     onSaved={handleSaved} />
+            <EditableField label="Phone"          field="phoneNumber"  caseId={c.id} value={c.phoneNumber}  onSaved={handleSaved} />
+            <EditableField label="Follow-up Date" field="followUpDate" caseId={c.id} value={c.followUpDate} type="date" onSaved={handleSaved} />
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <EditableField label="Gender" field="gender" caseId={c.id} value={c.gender}
+              type="select" options={["Male","Female"]} onSaved={handleSaved} />
+            <EditableField label="Age Group" field="ageGroup" caseId={c.id} value={c.ageGroup}
+              type="select" options={["1-12 years","13-25 years","26-40 years","Over 40 years"]} onSaved={handleSaved} />
+            <EditableField label="ASA" field="asa" caseId={c.id} value={c.asa}
+              type="select" options={["0","1","2","3","4","5","6"]} onSaved={handleSaved} />
+            <EditableField label="Tooth Number" field="toothNumber" caseId={c.id} value={c.toothNumber} onSaved={handleSaved} />
+          </div>
+
+          {/* Diagnosis — for all non-crack cases */}
+          {!crack && (
+            <div>
+              <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold mb-3">
+                Diagnosis {endo && <span className="text-gray-600 normal-case">(AAE 2013)</span>}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <EditableField label="Pulpal Diagnosis" field="pulpalDiagnosis" caseId={c.id} value={c.pulpalDiagnosis}
+                  type="select" options={[
+                    // AAE 2013 (EndoDecide)
+                    "Normal Pulp",
+                    "Reversible Pulpitis",
+                    "Irreversible Pulpitis",
+                    "Pulp Necrosis",
+                    "Previously Initiated Therapy",
+                    "Previously Treated",
+                    // Legacy predictor
+                    "Previously initiated root canal treatment",
+                    "Previously root canal treated",
+                  ]} onSaved={handleSaved} />
+                <EditableField label="Periapical Diagnosis" field="periapicalDiagnosis" caseId={c.id} value={c.periapicalDiagnosis}
+                  type="select" options={[
+                    "Normal Apical Tissues",
+                    "Symptomatic Apical Periodontitis",
+                    "Asymptomatic Apical Periodontitis",
+                    "Acute Apical Abscess",
+                    "Chronic Apical Abscess",
+                    // Legacy
+                    "Normal Apical tissue",
+                  ]} onSaved={handleSaved} />
+                <EditableField label="Treatment Recommendation" field="treatmentRec" caseId={c.id} value={c.treatmentRec}
+                  type="select" options={[
+                    "Root Canal Treatment",
+                    "Root Canal Retreatment",
+                    "Vital Pulp Therapy",
+                    "Microsurgical Endodontics (if surgically accessible)",
+                    "No Endodontic Treatment Indicated",
+                    "Extraction",
+                  ]} onSaved={handleSaved} />
+                <EditableField label="Periodontal Status" field="periodontalStatus" caseId={c.id} value={c.periodontalStatus}
+                  type="select" options={[
+                    "Healthy periodontium",
+                    "Gingivitis",
+                    "Initial to moderate periodontitis",
+                    "Advanced periodontal disease",
+                  ]} onSaved={handleSaved} />
+              </div>
+            </div>
+          )}
+
+          {/* Iowa + VRF info (read-only display for EndoDecide combined cases) */}
+          {endo && (c.iowaStage || c.vrfFlag) && (
+            <div>
+              <p className="text-[10px] text-orange-400/60 tracking-[2px] uppercase font-semibold mb-3">Crack Assessment</p>
+              <div className="grid grid-cols-2 gap-3">
+                {c.iowaStage && (
+                  <div className="bg-orange-500/8 border border-orange-500/20 rounded-xl p-3 text-center">
+                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">Iowa Stage</p>
+                    <p className="text-lg font-black text-orange-400">{c.iowaStage}</p>
+                    {c.iowaSuccessRate && (
+                      <p className="text-[10px] text-gray-500 mt-0.5">{c.iowaSuccessRate}% 1-yr success</p>
+                    )}
+                  </div>
+                )}
+                {c.vrfFlag && (
+                  <div className="bg-red-500/8 border border-red-500/20 rounded-xl p-3 text-center">
+                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">VRF</p>
+                    <p className="text-sm font-bold text-red-400">⚠ Cannot exclude</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">Direct visualization required</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div>
+            <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold mb-3">Notes</p>
+            <EditableField label="Further Notes" field="furtherNote" caseId={c.id} value={c.furtherNote} type="textarea" onSaved={handleSaved} />
+          </div>
+
+          {/* Calculated values (read-only) */}
+          {!crack && (survival !== undefined || c.epPoints !== undefined || c.remainingPercent !== undefined) && (
+            <div>
+              <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Calculated Values (read-only)</p>
+              <div className="grid grid-cols-3 gap-3">
+                {survival !== undefined && (
+                  <div className="bg-white/3 rounded-xl p-3 text-center">
+                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">Survival</p>
+                    <p className={`text-lg font-black ${survColor}`}>{survival}%</p>
+                    {c.survivalRange && (
+                      <p className="text-[9px] text-gray-600 mt-0.5">{c.survivalRange[0]}–{c.survivalRange[1]}%</p>
+                    )}
+                  </div>
+                )}
+                {c.epPoints !== undefined && (
+                  <div className="bg-white/3 rounded-xl p-3 text-center">
+                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">EP Points</p>
+                    <p className="text-lg font-black text-[#10b981]">{c.epPoints}</p>
+                  </div>
+                )}
+                {c.remainingPercent !== undefined && (
+                  <div className="bg-white/3 rounded-xl p-3 text-center">
+                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">Structure</p>
+                    <p className="text-lg font-black text-amber-400">{c.remainingPercent}%</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Affecting factors */}
+          {c.affectingFactors && c.affectingFactors.length > 0 && (
+            <div>
+              <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Affecting Factors</p>
+              <div className="flex flex-wrap gap-1.5">
+                {c.affectingFactors.map((f, i) => (
+                  <span key={i} className="text-[10px] bg-white/5 border border-white/8 px-2.5 py-1 rounded-full text-gray-400">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Status + actions */}
+          <div className="pt-3 border-t border-white/8 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-[10px] text-gray-600 uppercase tracking-wider">Status:</p>
+              {(["No Treatment","In-Progress","Done","Postpone"] as TreatmentStatus[]).map(s => {
+                const cfg = STATUS_CONFIG[s];
+                const isActive = c.treatmentStatus === s;
+                return (
+                  <button key={s} onClick={e => handleInlineStatusChange(e, s)}
+                    className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all ${
+                      isActive
+                        ? `${cfg.bg} ${cfg.border} ${cfg.text} cursor-default`
+                        : "bg-white/4 border-white/10 text-gray-600 hover:border-white/25 hover:text-gray-400"
+                    }`}>
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                {confirmDelete ? (
+                  <>
+                    <span className="text-xs text-red-400">Permanently delete?</span>
+                    <button onClick={handleDelete} disabled={deleting}
+                      className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50">
+                      {deleting ? "Deleting..." : "Yes, delete"}
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); setConfirmDelete(false); }}
+                      className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-white/8 text-gray-400 hover:bg-white/15 transition-colors">
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={handleDelete}
+                    className="flex items-center gap-1.5 text-[10px] font-bold text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded-full hover:bg-red-500/10 border border-transparent hover:border-red-500/20">
+                    <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                      <path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Delete case
+                  </button>
+                )}
+              </div>
+              <button onClick={onOpen}
+                className="flex items-center gap-1.5 text-xs font-semibold text-[#10b981] hover:text-[#0ea76e] transition-colors">
+                Full details page
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
