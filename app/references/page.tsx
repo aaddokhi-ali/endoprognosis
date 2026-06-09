@@ -97,6 +97,16 @@ const tools = [
         journal: "Periodontol 2000.",
         year: "2017 Jun;74(1):11–39.",
       },
+      {
+        text: "Turan Gökduman C, Çanakçi BC, Arili Öztürk E, Er Ö. Factors affecting long-term success and survival in non-surgical root canal retreatment; a retrospective cohort study.",
+        journal: "Clin Oral Investig.",
+        year: "2025;29:491. doi:10.1007/s00784-025-06592-y",
+      },
+      {
+        text: "Sainudeen S, Rani P, Batra D, Vedula BD, Vaybase VA, Mitthra S, Mustafa M. Factors influencing the success of endodontic retreatment: insights from a retrospective study.",
+        journal: "J Pharm Bioall Sci.",
+        year: "2024;16(Suppl 3):S2391–3. doi:10.4103/jpbs.jpbs_283_24",
+      },
     ],
   },
   {
@@ -286,18 +296,35 @@ export default function ReferencesPage() {
                 <div className={`transition-all duration-500 ease-in-out ${isOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"} overflow-hidden`}>
                   <div className="px-8 pb-8">
                     <div className="border-t border-white/10 pt-6 space-y-5">
-                      {tool.references.map((ref, idx) => (
-                        <div key={idx} className="flex gap-4 items-start group/ref">
-                          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#10b981]/10 border border-[#10b981]/20 flex items-center justify-center text-[10px] font-bold text-[#10b981] mt-0.5">
-                            {idx + 1}
-                          </span>
-                          <p className="text-gray-300 text-[15px] leading-relaxed">
-                            {ref.text}{" "}
-                            <span className="font-semibold text-white">{ref.journal}</span>{" "}
-                            <span className="text-gray-400">{ref.year}</span>
-                          </p>
-                        </div>
-                      ))}
+                      {tool.references.map((ref, idx) => {
+                        const isNew =
+                          tool.id === 1 && idx >= tool.references.length - 2;
+                        return (
+                          <div key={idx} className={`flex gap-4 items-start group/ref rounded-xl transition-colors ${
+                            isNew ? "bg-cyan-500/8 border border-cyan-500/20 px-3 py-2" : ""
+                          }`}>
+                            <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5 ${
+                              isNew
+                                ? "bg-cyan-500/20 border border-cyan-500/40 text-cyan-400"
+                                : "bg-[#10b981]/10 border border-[#10b981]/20 text-[#10b981]"
+                            }`}>
+                              {idx + 1}
+                            </span>
+                            <div className="flex-1">
+                              <p className="text-gray-300 text-[15px] leading-relaxed">
+                                {ref.text}{" "}
+                                <span className="font-semibold text-white">{ref.journal}</span>{" "}
+                                <span className="text-gray-400">{ref.year}</span>
+                              </p>
+                              {isNew && (
+                                <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full">
+                                  Tier 4 evidence — added 2025
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
