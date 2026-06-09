@@ -16,6 +16,12 @@ type OcclusalState = "access_only" | "moderate" | "severe";
 type PocketLevel   = "normal" | "attachment" | "deep";
 type Urgency    = "low" | "medium" | "high";
 
+// ── NEW: Retreatment-specific types ──
+type ObturationQuality   = "adequate" | "inadequate";
+type RestorationQuality  = "good" | "poor";
+type PostWithoutCrown    = "no" | "yes";
+type PreviousAttempts    = "first" | "second" | "third_or_more";
+
 interface WallStates {
   mesial: WallState; distal: WallState;
   buccal: WallState; lingual: WallState;
@@ -150,15 +156,13 @@ function derivePulpalDiagnosis(form: any): {
   isInconsistent: boolean;
   inconsistencyNote: string;
 } {
-  // Previously treated — bypasses everything
   if (form.rootTreated === "yes") return { diagnosis: "Previously Treated", isInconsistent: false, inconsistencyNote: "" };
   if (form.rootAccessed === "yes") return { diagnosis: "Previously Initiated Therapy", isInconsistent: false, inconsistencyNote: "" };
 
-  const coldResponse  = form.coldTest;      // "none" | "normal" | "lingering_short" | "lingering_long"
+  const coldResponse  = form.coldTest;
   const spontaneous   = form.spontaneous === "yes";
   const nocturnal     = form.nocturnal === "yes";
 
-  // Edge case: no cold response + spontaneous pain = inconsistent (necrobiosis)
   if (coldResponse === "none" && (spontaneous || nocturnal)) {
     return {
       diagnosis: "Pulp Necrosis",
@@ -168,18 +172,12 @@ function derivePulpalDiagnosis(form: any): {
   }
 
   if (coldResponse === "none") return { diagnosis: "Pulp Necrosis", isInconsistent: false, inconsistencyNote: "" };
-
-  // Irreversible Pulpitis: lingering >30s OR spontaneous OR nocturnal
   if (coldResponse === "lingering_long" || spontaneous || nocturnal) {
     return { diagnosis: "Irreversible Pulpitis", isInconsistent: false, inconsistencyNote: "" };
   }
-
-  // Reversible Pulpitis: lingering <30s, no spontaneous, no nocturnal
   if (coldResponse === "lingering_short") {
     return { diagnosis: "Reversible Pulpitis", isInconsistent: false, inconsistencyNote: "" };
   }
-
-  // Normal: brief response, resolves within 1-2 seconds
   if (coldResponse === "normal") return { diagnosis: "Normal Pulp", isInconsistent: false, inconsistencyNote: "" };
 
   return { diagnosis: "Not determined", isInconsistent: false, inconsistencyNote: "" };
@@ -187,8 +185,6 @@ function derivePulpalDiagnosis(form: any): {
 
 // ════════════════════════════════════════════════════════════
 // PERIAPICAL DIAGNOSIS LOGIC (AAE 2013 terminology)
-// Percussion/palpation = periapical axis, NOT pulpal axis
-// Priority: swelling > sinus > percussion/palpation > lesion > normal
 // ════════════════════════════════════════════════════════════
 function derivePeriapicalDiagnosis(form: any): {
   diagnosis: string;
@@ -201,7 +197,6 @@ function derivePeriapicalDiagnosis(form: any): {
   const hasPalpation  = form.palpation  === "yes";
   const hasLesion     = form.periApical === "yes";
 
-  // Inconsistency: swelling + sinus together is unusual, flag it
   if (hasSwelling && hasSinus) {
     return {
       diagnosis: "Acute Apical Abscess",
@@ -210,19 +205,10 @@ function derivePeriapicalDiagnosis(form: any): {
     };
   }
 
-  // Priority rule 1: swelling overrides everything
-  if (hasSwelling) return { diagnosis: "Acute Apical Abscess", isInconsistent: false, inconsistencyNote: "" };
-
-  // Priority rule 2: sinus tract
-  if (hasSinus) return { diagnosis: "Chronic Apical Abscess", isInconsistent: false, inconsistencyNote: "" };
-
-  // Priority rule 3: percussion or palpation tenderness
+  if (hasSwelling)              return { diagnosis: "Acute Apical Abscess",          isInconsistent: false, inconsistencyNote: "" };
+  if (hasSinus)                 return { diagnosis: "Chronic Apical Abscess",         isInconsistent: false, inconsistencyNote: "" };
   if (hasPercussion || hasPalpation) return { diagnosis: "Symptomatic Apical Periodontitis", isInconsistent: false, inconsistencyNote: "" };
-
-  // Priority rule 4: radiographic lesion only
-  if (hasLesion) return { diagnosis: "Asymptomatic Apical Periodontitis", isInconsistent: false, inconsistencyNote: "" };
-
-  // Normal
+  if (hasLesion)                return { diagnosis: "Asymptomatic Apical Periodontitis", isInconsistent: false, inconsistencyNote: "" };
   return { diagnosis: "Normal Apical Tissues", isInconsistent: false, inconsistencyNote: "" };
 }
 
@@ -237,6 +223,102 @@ function calcIowaStage(deepCount: number, marginalRidge: boolean, periDx: string
   const isStageIIITrigger = ["Asymptomatic Apical Periodontitis","Symptomatic Apical Periodontitis","Acute Apical Abscess","Chronic Apical Abscess"].includes(periDx);
   if (!isStageIIITrigger) return { stage: "II", successRate: 84, label: "Crack across distal marginal ridge — no periapical involvement" };
   return { stage: "III", successRate: 69, label: "Crack across distal marginal ridge with periapical involvement" };
+}
+
+// ════════════════════════════════════════════════════════════
+// TIER 4 — RETREATMENT HISTORY CALCULATION
+// Activated only when rootTreated === "yes"
+// Uncapped — these are legitimate impractical triggers,
+// unlike Tier 3 procedural errors which are workable
+// ════════════════════════════════════════════════════════════
+function calcTier4(params: {
+  rootTreated: boolean;
+  existingObturation: ObturationQuality;
+  restorationQuality: RestorationQuality;
+  postWithoutCrown: PostWithoutCrown;
+  previousAttempts: PreviousAttempts;
+}): {
+  tier4Deductions: number;
+  isPostWithoutCrownOverride: boolean;
+  obturationNarrative: string;
+  tier4Factors: string[];
+} {
+  const { rootTreated, existingObturation, restorationQuality,
+    postWithoutCrown, previousAttempts } = params;
+
+  // Not a retreatment case — zero contribution
+  if (!rootTreated) {
+    return {
+      tier4Deductions: 0,
+      isPostWithoutCrownOverride: false,
+      obturationNarrative: "",
+      tier4Factors: [],
+    };
+  }
+
+  let deductions = 0;
+  const factors: string[] = [];
+
+  // ── 1. Existing obturation quality ──
+  // Zgur-Er 2025: short fillings → 2.1× HR on univariate (p=0.035)
+  // Lost significance on multivariate when restoration controlled for
+  // → modest penalty (3 pts), strong narrative value
+  if (existingObturation === "inadequate") {
+    deductions += 3;
+    factors.push(
+      "Inadequate pre-existing obturation — intraradicular cause likely; favorable retreatment biology if disinfection achievable"
+    );
+  } else {
+    factors.push(
+      "Adequate pre-existing obturation — consider extraradicular cause for failure (radicular cyst, scar tissue healing, or VRF)"
+    );
+  }
+
+  // ── 2. Coronal restoration quality ──
+  // Zgur-Er 2025 multivariate: poor composite → HR 6.89×, poor crown → HR 7.21×
+  // 8-point penalty maps retreatment baseline (~87) to ~79%
+  // which aligns with the overall cohort success rate in that study
+  if (restorationQuality === "poor") {
+    deductions += 8;
+    factors.push(
+      "Poor coronal restoration quality — 6.9–7.2× higher failure risk on multivariate analysis (Zgur-Er 2025)"
+    );
+  }
+
+  // ── 3. Post without full coverage ──
+  // Zgur-Er 2025: survival collapsed to 25.6%, 100% fracture-related extraction
+  // This is an override-level finding — 18 pt penalty pushes most cases below threshold
+  const isPostWithoutCrownOverride = postWithoutCrown === "yes";
+  if (isPostWithoutCrownOverride) {
+    deductions += 18;
+    factors.push(
+      "Post present without full coverage crown — survival rate 25.6%; 100% of extractions in this group were fracture-related (Zgur-Er 2025). Full coverage restoration is mandatory."
+    );
+  }
+
+  // ── 4. Number of previous treatment attempts ──
+  // Biological rationale: each retreatment further compromises dentin,
+  // reduces canal taper options, and increases treatment-resistant biofilm
+  // No single study powers this exactly — penalties are clinically reasoned
+  if (previousAttempts === "second") {
+    deductions += 3;
+    factors.push("Second retreatment attempt — additional dentin loss and elevated treatment-resistant bacterial load");
+  } else if (previousAttempts === "third_or_more") {
+    deductions += 7;
+    factors.push("Third or more retreatment attempt — severely compromised prognosis; surgical option should be evaluated");
+  }
+
+  // Obturation narrative (used separately in explanationNote on result page)
+  const obturationNarrative = existingObturation === "inadequate"
+    ? "The pre-existing root canal filling was inadequate, suggesting an intraradicular cause for failure that may be correctable with thorough retreatment."
+    : "The pre-existing root canal filling was adequate, raising the possibility of an extraradicular cause for failure. Correlation with CBCT and clinical findings is recommended before proceeding.";
+
+  return {
+    tier4Deductions: deductions,
+    isPostWithoutCrownOverride,
+    obturationNarrative,
+    tier4Factors: factors,
+  };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -259,6 +341,12 @@ function calculatePrognosis(params: {
   perfTime: string;
   prostho: string;
   periApical: boolean;
+  // NEW: Tier 4 params
+  rootTreated: boolean;
+  existingObturation: ObturationQuality;
+  restorationQuality: RestorationQuality;
+  postWithoutCrown: PostWithoutCrown;
+  previousAttempts: PreviousAttempts;
 }): {
   survival: number;
   survivalRange: [number, number];
@@ -271,10 +359,16 @@ function calculatePrognosis(params: {
   tier1Deductions: number;
   tier2Deductions: number;
   tier3Deductions: number;
+  // NEW
+  tier4Deductions: number;
+  isPostWithoutCrownOverride: boolean;
+  obturationNarrative: string;
+  tier4Factors: string[];
 } {
   const { toothNumber, walls, occlusal, remainingPercent, perio, oralHygiene,
     medical, endo, instrumentSep, sepLocation, sepStage, perforation,
-    perfLocation, perfTime, prostho, periApical } = params;
+    perfLocation, perfTime, prostho, periApical,
+    rootTreated, existingObturation, restorationQuality, postWithoutCrown, previousAttempts } = params;
 
   const isAnterior  = ["11","12","13","21","22","23","31","32","33","41","42","43"].includes(toothNumber);
   const isPremolar  = ["14","15","24","25","34","35","44","45"].includes(toothNumber);
@@ -287,42 +381,35 @@ function calculatePrognosis(params: {
   // ── TIER 1: Tooth-level factors ──
   let tier1 = 0;
 
-  // Tooth type deduction
   if (!isAnterior && !isPremolar) tier1 += 4;
   else if (!isAnterior)           tier1 += 2;
 
-  // Structure loss penalty
   const missingPercent = 100 - remainingPercent;
   if      (missingPercent > 70) tier1 += 12;
   else if (missingPercent > 50) tier1 += 8;
   else if (missingPercent > 30) tier1 += 4;
   else if (missingPercent > 10) tier1 += 2;
 
-  // Ferrule penalty (separate from structure — measures restorability consequence)
   const ferrule = computeFerrule(walls);
   tier1 += Math.round(ferrule.penalty * 0.4);
 
-  // Endodontic complexity
   const endoVal = parseInt(endo) || 0;
-  if      (endoVal === 10) tier1 += 10; // untreatable — max penalty, surgical option
-  else if (endoVal === 5)  tier1 += 5;  // challenging
+  if      (endoVal === 10) tier1 += 10;
+  else if (endoVal === 5)  tier1 += 5;
 
   // ── TIER 2: Patient-level factors ──
   let tier2 = 0;
 
-  // Periodontal base deduction
   const perioVal = parseInt(perio) || 0;
   let perioBase = 0;
   if      (perioVal >= 6) perioBase = 10;
   else if (perioVal === 3) perioBase = 5;
   else if (perioVal === 1) perioBase = 2;
 
-  // Oral hygiene amplifier
   const ohVal = parseInt(oralHygiene) || 0;
   const amplifier = ohVal === 2 ? 2.0 : ohVal === 1 ? 1.5 : 1.0;
   tier2 += Math.round(perioBase * amplifier);
 
-  // Medical status
   const medVal = parseInt(medical) || 0;
   if      (medVal >= 6) tier2 += 8;
   else if (medVal >= 3) tier2 += 4;
@@ -349,8 +436,18 @@ function calculatePrognosis(params: {
   const afterTier12 = survival - tier1 - tier2;
   const cappedTier3 = Math.min(tier3, Math.max(0, afterTier12 - threshold));
 
+  // ── TIER 4: Retreatment history (uncapped) ──
+  const tier4Result = calcTier4({
+    rootTreated,
+    existingObturation,
+    restorationQuality,
+    postWithoutCrown,
+    previousAttempts,
+  });
+  const { tier4Deductions, isPostWithoutCrownOverride, obturationNarrative, tier4Factors } = tier4Result;
+
   // Apply all tiers
-  survival = Math.round(survival - tier1 - tier2 - cappedTier3);
+  survival = Math.round(survival - tier1 - tier2 - cappedTier3 - tier4Deductions);
   survival = Math.max(35, Math.min(92, survival));
 
   // Prostho context (applied after tiers for context adjustment)
@@ -362,23 +459,23 @@ function calculatePrognosis(params: {
 
   const survivalRange: [number, number] = [Math.max(0, survival - 3), Math.min(100, survival + 3)];
 
-  // DPI total
-  const totalDPI = tier1 + tier2 + cappedTier3 + (periApical ? 1 : 0) + prosthoVal;
+  const totalDPI = tier1 + tier2 + cappedTier3 + tier4Deductions + (periApical ? 1 : 0) + prosthoVal;
 
-  // Practical determination
   const isPractical = survival >= threshold;
 
-  // Impractical override: untreatable canal
+  // Impractical override: untreatable canal in non-anterior tooth (existing)
   const isImpracticalOverride = endoVal === 10 && !isAnterior;
   const overrideReason = isImpracticalOverride
     ? "Untreatable canal system in a non-anterior tooth — surgical access required to determine feasibility"
-    : "";
+    : isPostWithoutCrownOverride
+      ? "Post present without full coronal coverage — full coverage restoration is required before or concurrent with retreatment"
+      : "";
 
   return {
     survival,
     survivalRange,
     totalDPI,
-    isPractical: isImpracticalOverride ? false : isPractical,
+    isPractical: (isImpracticalOverride || isPostWithoutCrownOverride) ? false : isPractical,
     threshold,
     toothType,
     isImpracticalOverride,
@@ -386,6 +483,10 @@ function calculatePrognosis(params: {
     tier1Deductions: tier1,
     tier2Deductions: tier2,
     tier3Deductions: cappedTier3,
+    tier4Deductions,
+    isPostWithoutCrownOverride,
+    obturationNarrative,
+    tier4Factors,
   };
 }
 
@@ -422,13 +523,16 @@ function buildAffectingFactors(params: {
   perforation: boolean;
   prosthoVal: number;
   ferrule: { wallsWithFerrule: number; label: string };
+  // NEW: Tier 4 factors passed in pre-computed
+  tier4Factors: string[];
+  postWithoutCrown: PostWithoutCrown;
 }): string[] {
   const factors: string[] = [];
   const { remainingPercent, walls, periApical, perio, oralHygiene, medical,
-    endoVal, instrumentSep, perforation, prosthoVal, ferrule } = params;
+    endoVal, instrumentSep, perforation, prosthoVal, ferrule,
+    tier4Factors, postWithoutCrown } = params;
 
   const missingPercent = 100 - remainingPercent;
-  const severeWalls = (Object.values(walls) as WallState[]).filter(v => v === "severe").length;
 
   if (missingPercent > 0) {
     let structureText = `${missingPercent}% loss of coronal tooth structure`;
@@ -437,6 +541,14 @@ function buildAffectingFactors(params: {
     factors.push(structureText);
   } else {
     factors.push("Adequate remaining coronal structure");
+  }
+
+  // Fracture risk warning — triggered by ferrule compromise OR post-without-crown
+  // Evidence: fracture = 66.7% of extractions post-endo (Zgur-Er 2025)
+  if (ferrule.wallsWithFerrule <= 2 || postWithoutCrown === "yes") {
+    factors.push(
+      "High structural fracture risk — crown/root fracture accounts for 66.7% of post-endodontic extractions, far exceeding apical periodontitis recurrence"
+    );
   }
 
   if (periApical) factors.push("Periapical lesion present");
@@ -468,7 +580,10 @@ function buildAffectingFactors(params: {
   if (perforation)   factors.push("Root perforation");
   if (prosthoVal >= 1) factors.push("Prosthodontic complexity");
 
-  return factors.slice(0, 7);
+  // Append Tier 4 factors last (retreatment-specific)
+  tier4Factors.forEach(f => factors.push(f));
+
+  return factors.slice(0, 9); // Increased cap from 7 to 9 to accommodate Tier 4
 }
 
 // ════════════════════════════════════════════════════════════
@@ -555,8 +670,6 @@ function UnifiedDiagram({
 
   return (
     <div className="bg-[#0a1428] border border-white/10 rounded-3xl p-6 md:p-8">
-
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-base font-semibold text-white">Coronal Structure & Periodontal Probing</h3>
@@ -571,83 +684,51 @@ function UnifiedDiagram({
       </div>
 
       <div className="flex flex-col xl:flex-row gap-8 items-start">
-
-        {/* ── UNIFIED SVG DIAGRAM ── */}
         <div className="flex-shrink-0 flex flex-col items-center mx-auto">
           <svg width="320" height="300" viewBox="0 0 320 300" className="w-full max-w-xs">
-
-            {/* Ferrule ring */}
             <rect x="12" y="12" width="296" height="276" rx="32"
-              fill="none"
-              stroke={ferruleRingColor}
-              strokeWidth="2.5" strokeDasharray="6 4" opacity="0.5"
-            />
-
-            {/* Buccal wall */}
+              fill="none" stroke={ferruleRingColor}
+              strokeWidth="2.5" strokeDasharray="6 4" opacity="0.5" />
             <rect x="32" y="18" width="256" height="46" rx="12"
-              fill={wallColor(walls.buccal)} opacity={walls.buccal === "intact" ? 0.7 : 0.45}
-            />
-            {/* Lingual wall */}
+              fill={wallColor(walls.buccal)} opacity={walls.buccal === "intact" ? 0.7 : 0.45} />
             <rect x="32" y="236" width="256" height="46" rx="12"
-              fill={wallColor(walls.lingual)} opacity={walls.lingual === "intact" ? 0.7 : 0.45}
-            />
-            {/* Mesial wall */}
+              fill={wallColor(walls.lingual)} opacity={walls.lingual === "intact" ? 0.7 : 0.45} />
             <rect x="18" y="32" width="46" height="236" rx="12"
-              fill={wallColor(walls.mesial)} opacity={walls.mesial === "intact" ? 0.7 : 0.45}
-            />
-            {/* Distal wall */}
+              fill={wallColor(walls.mesial)} opacity={walls.mesial === "intact" ? 0.7 : 0.45} />
             <rect x="256" y="32" width="46" height="236" rx="12"
-              fill={wallColor(walls.distal)} opacity={walls.distal === "intact" ? 0.7 : 0.45}
-            />
-
-            {/* Occlusal center */}
+              fill={wallColor(walls.distal)} opacity={walls.distal === "intact" ? 0.7 : 0.45} />
             <rect x="64" y="64" width="192" height="172" rx="18"
               fill={occlusal === "access_only" ? "#10b981" : occlusal === "moderate" ? "#f59e0b" : "#ef4444"}
-              opacity={occlusal === "access_only" ? 0.55 : 0.38}
-            />
-
-            {/* Access cavity */}
+              opacity={occlusal === "access_only" ? 0.55 : 0.38} />
             <circle cx="160" cy="150" r="28"
               fill={occlusal === "access_only" ? "#0a1428" : occlusal === "moderate" ? "#92400e" : "#7f1d1d"}
-              opacity="0.85"
-            />
-
-            {/* Wall labels */}
+              opacity="0.85" />
             <text x="160" y="45"  textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9">BUCCAL</text>
             <text x="160" y="263" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9">LINGUAL</text>
             <text x="41"  y="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9" transform="rotate(-90 41 154)">MESIAL</text>
             <text x="279" y="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9" transform="rotate(90 279 154)">DISTAL</text>
             <text x="160" y="145" textAnchor="middle" fontSize="8" fill="white" opacity="0.75">ACCESS</text>
             <text x="160" y="157" textAnchor="middle" fontSize="8" fill="white" opacity="0.75">CAVITY</text>
-
-            {/* Remaining % */}
             <text x="160" y="200" textAnchor="middle" fontSize="13" fill="#10b981" fontWeight="800">{remainingPercent}%</text>
-
-            {/* ── PROBING DOTS ── */}
-            {/* Positioned around the tooth perimeter */}
             {sites.map(s => {
               const color = POCKET_COLOR[s.level];
               const isDeep = s.level === "deep";
               return (
                 <g key={s.id} onClick={() => onSiteChange(s.id)} style={{ cursor: "pointer" }}>
-                  {/* Pulse ring for deep pockets */}
                   {isDeep && (
                     <circle cx={s.cx} cy={s.cy} r="14" fill="none"
                       stroke={color} strokeWidth="1.5" opacity="0.35" />
                   )}
                   <circle cx={s.cx} cy={s.cy} r="11"
                     fill={color + "25"} stroke={color} strokeWidth="2"
-                    style={{ filter: `drop-shadow(0 0 5px ${color}60)` }}
-                  />
+                    style={{ filter: `drop-shadow(0 0 5px ${color}60)` }} />
                   <text x={s.cx} y={s.cy + 4} textAnchor="middle"
                     fontSize="8" fill={color} fontWeight="800">{s.short}</text>
                 </g>
               );
             })}
-
           </svg>
 
-          {/* Ferrule status badge */}
           <div className={`mt-3 px-3 py-1.5 rounded-full text-[10px] font-semibold border ${
             ferrule.wallsWithFerrule >= 4 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
             ferrule.wallsWithFerrule >= 3 ? "bg-amber-500/10 border-amber-500/30 text-amber-400" :
@@ -656,7 +737,6 @@ function UnifiedDiagram({
             {ferrule.label}
           </div>
 
-          {/* Deep pocket warning */}
           {deepCount >= 1 && (
             <div className="mt-2 flex items-center gap-1.5 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
@@ -667,13 +747,8 @@ function UnifiedDiagram({
           )}
         </div>
 
-        {/* ── CONTROLS PANEL ── */}
         <div className="flex-1 w-full space-y-2">
-
-          {/* Wall label */}
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Coronal Walls — click to cycle</p>
-
-          {/* 4 walls */}
           {wallOrder.map((wall) => {
             const state = walls[wall];
             const cfg   = WALL_CONFIG[state];
@@ -698,7 +773,6 @@ function UnifiedDiagram({
             );
           })}
 
-          {/* Occlusal */}
           <button onClick={() => onOcclusalChange(cycleOcclusal(occlusal))}
             className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border ${OCCLUSAL_CONFIG[occlusal].bg} ${OCCLUSAL_CONFIG[occlusal].border} hover:opacity-90 transition-all group`}
           >
@@ -719,10 +793,7 @@ function UnifiedDiagram({
             </div>
           </button>
 
-          {/* Probing label */}
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-4 mb-2">Periodontal Probing — click dots to cycle depth</p>
-
-          {/* Probing site list */}
           {sites.map(s => {
             const color = POCKET_COLOR[s.level];
             return (
@@ -739,7 +810,6 @@ function UnifiedDiagram({
             );
           })}
 
-          {/* Probing summary badges */}
           <div className="grid grid-cols-3 gap-2 mt-3">
             {[
               { label: "Normal",     count: normalCount, color: "#10b981" },
@@ -756,7 +826,6 @@ function UnifiedDiagram({
         </div>
       </div>
 
-      {/* Legend */}
       <div className="flex items-center gap-6 mt-5 pt-4 border-t border-white/8 flex-wrap">
         {(["intact", "moderate", "severe"] as WallState[]).map(s => (
           <div key={s} className="flex items-center gap-1.5">
@@ -797,7 +866,6 @@ function CrackSection({ formData, onChange }: {
         </span>
       </div>
 
-      {/* Crack presence gate */}
       <div className="mb-5">
         <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
           Is a crack suspected or present?
@@ -811,11 +879,8 @@ function CrackSection({ formData, onChange }: {
 
       {crackPresent && (
         <>
-          {/* Confirmation methods */}
           <div className={`rounded-2xl border-2 p-5 mb-5 transition-all ${
-            crackConfirmed
-              ? "bg-emerald-500/8 border-emerald-500/40"
-              : "bg-white/3 border-white/15"
+            crackConfirmed ? "bg-emerald-500/8 border-emerald-500/40" : "bg-white/3 border-white/15"
           }`}>
             <p className={`text-sm font-semibold mb-1 ${crackConfirmed ? "text-emerald-400" : "text-gray-300"}`}>
               Crack Confirmation — Required for Iowa Classification
@@ -834,9 +899,7 @@ function CrackSection({ formData, onChange }: {
                   <button key={m.field} type="button"
                     onClick={() => toggleConfirm(m.field)}
                     className={`text-left rounded-2xl p-4 border-2 transition-all ${
-                      confirmed
-                        ? "bg-emerald-500/15 border-emerald-500/50"
-                        : "bg-white/3 border-white/10 hover:border-white/25"
+                      confirmed ? "bg-emerald-500/15 border-emerald-500/50" : "bg-white/3 border-white/10 hover:border-white/25"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -858,9 +921,7 @@ function CrackSection({ formData, onChange }: {
               })}
             </div>
             <div className={`mt-4 flex items-center gap-2 rounded-xl px-4 py-2.5 border ${
-              crackConfirmed
-                ? "bg-emerald-500/10 border-emerald-500/25"
-                : "bg-amber-500/10 border-amber-500/25"
+              crackConfirmed ? "bg-emerald-500/10 border-emerald-500/25" : "bg-amber-500/10 border-amber-500/25"
             }`}>
               {crackConfirmed ? (
                 <>
@@ -881,7 +942,6 @@ function CrackSection({ formData, onChange }: {
             </div>
           </div>
 
-          {/* Crack-related clinical findings */}
           {crackConfirmed && (
             <div className="grid md:grid-cols-2 gap-5">
               <div>
@@ -914,7 +974,167 @@ function CrackSection({ formData, onChange }: {
 }
 
 // ════════════════════════════════════════════════════════════
-// LIVE DIAGNOSIS BADGE (shown inline during form)
+// RETREATMENT HISTORY SECTION — NEW TIER 4 COMPONENT
+// Renders only when rootTreated === "yes"
+// Accent: cyan (#06b6d4) — distinct from all existing sections
+// ════════════════════════════════════════════════════════════
+function RetreatmentSection({ formData, onChange }: {
+  formData: any;
+  onChange: (name: string, value: string) => void;
+}) {
+  const postWithoutCrown = formData.postWithoutCrown === "yes";
+
+  return (
+    <div className="bg-[#0d1a30] border border-cyan-500/30 rounded-3xl p-6 md:p-8">
+
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-1 h-6 rounded-full bg-cyan-500" />
+        <h3 className="font-semibold text-white">Retreatment History</h3>
+        <span className="ml-2 text-[10px] text-cyan-600 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+          Tier 4 — Retreatment cases only
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 mb-6 leading-relaxed ml-3">
+        These factors are specific to previously root canal treated teeth and contribute
+        an independent retreatment penalty tier. Penalties in this tier are uncapped —
+        post without crown and repeated retreatment are legitimate impractical triggers.
+      </p>
+
+      <div className="space-y-5">
+
+        {/* 1. Number of previous attempts */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
+            Number of Previous Treatment Attempts
+          </label>
+          <select name="previousAttempts" value={formData.previousAttempts}
+            onChange={e => onChange("previousAttempts", e.target.value)} className={sel}>
+            <option value="first">First retreatment</option>
+            <option value="second">Second retreatment</option>
+            <option value="third_or_more">Third or more — surgical option should be evaluated</option>
+          </select>
+          {formData.previousAttempts === "third_or_more" && (
+            <div className="mt-2 flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-red-400 flex-shrink-0 mt-0.5">
+                <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              <p className="text-xs text-red-400 leading-relaxed">
+                Third or more retreatment attempt — severe dentin loss, altered anatomy, and elevated
+                treatment-resistant bacterial load. Microsurgical endodontics should be evaluated.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* 2. Existing obturation quality */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
+            Quality of Existing Root Canal Obturation
+            <span className="ml-1 normal-case text-cyan-400/70">— assess pre-op radiograph</span>
+          </label>
+          <select name="existingObturation" value={formData.existingObturation}
+            onChange={e => onChange("existingObturation", e.target.value)} className={sel}>
+            <option value="adequate">Adequate — within 0–2mm of apex, homogeneous, no voids</option>
+            <option value="inadequate">Inadequate — short, voids, poor density, or missed canals</option>
+          </select>
+          {/* Obturation narrative hint */}
+          <p className="text-[10px] mt-1.5 leading-relaxed px-1" style={{ color: "#06b6d480" }}>
+            {formData.existingObturation === "inadequate"
+              ? "Intraradicular cause likely — correctable with thorough retreatment"
+              : "Adequate obturation — consider extraradicular cause (radicular cyst, scar tissue, VRF) before proceeding"
+            }
+          </p>
+        </div>
+
+        {/* 3. Coronal restoration quality */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
+            Quality of Coronal Restoration at Time of Failure
+            <span className="ml-1 normal-case text-cyan-400/70">— assess clinically and radiographically</span>
+          </label>
+          <select name="restorationQuality" value={formData.restorationQuality}
+            onChange={e => onChange("restorationQuality", e.target.value)} className={sel}>
+            <option value="good">Good — intact margins, no leakage, no recurrent caries</option>
+            <option value="poor">Poor — marginal breakdown, leakage, recurrent caries, or lost</option>
+          </select>
+          {formData.restorationQuality === "poor" && (
+            <div className="mt-2 flex items-start gap-2 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-amber-400 flex-shrink-0 mt-0.5">
+                <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              <p className="text-xs text-amber-400 leading-relaxed">
+                Poor restoration quality is the strongest independent predictor of retreatment failure —
+                6.9–7.2× higher failure risk on multivariate analysis (Zgur-Er 2025).
+                Restoration plan must be addressed for retreatment to succeed.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* 4. Post without full coverage — most severe, listed last */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
+            Post Present Without Full Coverage Crown?
+            <span className="ml-1 normal-case text-red-400/70">★ Override trigger</span>
+          </label>
+          <select name="postWithoutCrown" value={formData.postWithoutCrown}
+            onChange={e => onChange("postWithoutCrown", e.target.value)} className={sel}>
+            <option value="no">No — no post, or post with full coverage crown</option>
+            <option value="yes">Yes — post present but no full coverage crown</option>
+          </select>
+
+          {/* Post without crown — prominent override warning */}
+          {postWithoutCrown && (
+            <div className="mt-3 rounded-2xl border-2 border-red-500/50 bg-red-500/8 p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 2L14 13H2L8 2Z" stroke="#ef4444" strokeWidth="1.6" strokeLinejoin="round"/>
+                    <path d="M8 7v3M8 11.5v.5" stroke="#ef4444" strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-red-400 mb-1">
+                    Critical Structural Risk — Impractical Override
+                  </p>
+                  <p className="text-xs text-red-300/80 leading-relaxed mb-2">
+                    Teeth with a post but no full coverage crown showed a survival rate of only 25.6%,
+                    with 100% of extractions in this group caused by crown or root fracture
+                    (Zgur-Er 2025, n=39 teeth, ≥5-year follow-up).
+                  </p>
+                  <p className="text-xs text-red-400 font-semibold">
+                    Full coverage restoration is mandatory before or concurrent with retreatment.
+                    This finding will be flagged as impractical until the restoration plan is resolved.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tier 4 evidence note */}
+      <div className="mt-6 pt-4 border-t border-cyan-500/15 flex items-start gap-2">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-cyan-500/50 flex-shrink-0 mt-0.5">
+          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
+          <path d="M8 7v5M8 5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        </svg>
+        <p className="text-[10px] text-gray-600 leading-relaxed">
+          Tier 4 penalties are evidence-based where available (Zgur-Er 2025; Sainudeen et al. 2024)
+          and clinically reasoned for repeated retreatment attempts.
+          Tier 4 is uncapped — unlike Tier 3 procedural errors, these findings represent
+          genuine structural and biological compromise that cannot be worked around.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// LIVE DIAGNOSIS BADGE
 // ════════════════════════════════════════════════════════════
 function LiveDiagnosisBadge({ pulpal, periapical, inconsistencies }: {
   pulpal: string; periapical: string; inconsistencies: string[];
@@ -970,14 +1190,9 @@ function UrgencySelector({ value, onChange }: {
         return (
           <button key={o.key} type="button" onClick={() => onChange(o.key)}
             className={`text-left rounded-2xl p-4 border-2 transition-all ${
-              isSelected
-                ? "border-opacity-100"
-                : "border-white/10 bg-white/3 hover:border-white/25"
+              isSelected ? "border-opacity-100" : "border-white/10 bg-white/3 hover:border-white/25"
             }`}
-            style={isSelected ? {
-              background: cfg.accentDim,
-              borderColor: cfg.accent,
-            } : {}}
+            style={isSelected ? { background: cfg.accentDim, borderColor: cfg.accent } : {}}
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xl">{o.icon}</span>
@@ -1006,19 +1221,16 @@ export default function EndoDecide() {
   const router   = useRouter();
   const { user } = useAuth();
 
-  // ── Urgency (drives hero color) ──
   const [urgency, setUrgency] = useState<Urgency>("low");
   const urgCfg = URGENCY_CONFIG[urgency];
 
-  // ── Wall & probing state ──
-  const [walls, setWalls]     = useState<WallStates>({ mesial: "intact", distal: "intact", buccal: "intact", lingual: "intact" });
+  const [walls, setWalls]       = useState<WallStates>({ mesial: "intact", distal: "intact", buccal: "intact", lingual: "intact" });
   const [occlusal, setOcclusal] = useState<OcclusalState>("access_only");
-  const [sites, setSites]     = useState<ProbingSite[]>(INITIAL_SITES);
+  const [sites, setSites]       = useState<ProbingSite[]>(INITIAL_SITES);
 
   const remainingPercent = computeRemainingPercent(walls, occlusal);
   const deepCount        = sites.filter(s => s.level === "deep").length;
 
-  // ── Form data ──
   const [formData, setFormData] = useState({
     // Patient
     toothNumber:   "",
@@ -1030,7 +1242,7 @@ export default function EndoDecide() {
     oralHygiene:   "0",
     perio:         "0",
     // Cold test
-    coldTest:      "",       // "none" | "normal" | "lingering_short" | "lingering_long"
+    coldTest:      "",
     spontaneous:   "no",
     nocturnal:     "no",
     // Periapical clinical
@@ -1060,6 +1272,11 @@ export default function EndoDecide() {
     perfTime:      "recent",
     // Prostho
     prostho:       "0",
+    // ── NEW: Tier 4 — Retreatment History ──
+    previousAttempts:    "first"    as PreviousAttempts,
+    existingObturation:  "adequate" as ObturationQuality,
+    restorationQuality:  "good"     as RestorationQuality,
+    postWithoutCrown:    "no"       as PostWithoutCrown,
   });
 
   const [loading, setLoading] = useState(false);
@@ -1078,11 +1295,10 @@ export default function EndoDecide() {
     ));
   };
 
-  // ── Live diagnosis preview ──
-  const pulpalResult    = derivePulpalDiagnosis(formData);
+  const pulpalResult     = derivePulpalDiagnosis(formData);
   const periapicalResult = derivePeriapicalDiagnosis(formData);
-  const inconsistencies = [
-    pulpalResult.isInconsistent    ? pulpalResult.inconsistencyNote    : null,
+  const inconsistencies  = [
+    pulpalResult.isInconsistent     ? pulpalResult.inconsistencyNote     : null,
     periapicalResult.isInconsistent ? periapicalResult.inconsistencyNote : null,
   ].filter(Boolean) as string[];
 
@@ -1090,7 +1306,8 @@ export default function EndoDecide() {
     formData.crackTransillum === "yes" || formData.crackMethBlue === "yes" || formData.crackDirect === "yes"
   );
 
-  // ── Calculate & navigate ──
+  const isRetreatmentCase = formData.rootTreated === "yes";
+
   const calculate = () => {
     if (!formData.toothNumber) {
       alert("Please select a tooth number before generating the result.");
@@ -1103,7 +1320,7 @@ export default function EndoDecide() {
 
     setLoading(true);
     setTimeout(() => {
-      const pulpalDx    = pulpalResult.diagnosis;
+      const pulpalDx     = pulpalResult.diagnosis;
       const periapicalDx = periapicalResult.diagnosis;
       const periApicalBool = formData.periApical === "yes" ||
         ["Asymptomatic Apical Periodontitis","Symptomatic Apical Periodontitis",
@@ -1126,13 +1343,20 @@ export default function EndoDecide() {
         perfTime:      formData.perfTime,
         prostho:       formData.prostho,
         periApical:    periApicalBool,
+        // Tier 4
+        rootTreated:        formData.rootTreated === "yes",
+        existingObturation: formData.existingObturation as ObturationQuality,
+        restorationQuality: formData.restorationQuality as RestorationQuality,
+        postWithoutCrown:   formData.postWithoutCrown as PostWithoutCrown,
+        previousAttempts:   formData.previousAttempts as PreviousAttempts,
       });
 
-      const ferrule       = computeFerrule(walls);
-      const endoVal       = parseInt(formData.endo) || 0;
-      const treatmentRec  = deriveTreatmentRec(
+      const ferrule      = computeFerrule(walls);
+      const endoVal      = parseInt(formData.endo) || 0;
+      const treatmentRec = deriveTreatmentRec(
         pulpalDx, prognosisResult.isPractical, endoVal, formData.ageGroup
       );
+
       const affectingFactors = buildAffectingFactors({
         remainingPercent,
         walls,
@@ -1145,15 +1369,15 @@ export default function EndoDecide() {
         perforation:   formData.perforation   === "yes",
         prosthoVal:    parseInt(formData.prostho) || 0,
         ferrule,
+        tier4Factors:    prognosisResult.tier4Factors,
+        postWithoutCrown: formData.postWithoutCrown as PostWithoutCrown,
       });
 
-      // Iowa classification (if crack confirmed)
       let iowa: { stage: string; successRate: number; label: string } | null = null;
       if (crackConfirmed) {
         iowa = calcIowaStage(deepCount, formData.marginalRidge === "yes", periapicalDx);
       }
 
-      // VRF flag
       const vrfFlag = checkVRFFlag({
         rootTreated:      formData.rootTreated === "yes",
         deepCount,
@@ -1161,17 +1385,15 @@ export default function EndoDecide() {
         remainingPercent,
       });
 
-      // Intro paragraph
-      const toothType    = prognosisResult.toothType;
-      const casePresText = urgency === "low" ? "Asymptomatic" : urgency === "medium" ? "Symptomatic without swelling" : "Symptomatic with facial swelling";
+      const toothType     = prognosisResult.toothType;
+      const casePresText  = urgency === "low" ? "Asymptomatic" : urgency === "medium" ? "Symptomatic without swelling" : "Symptomatic with facial swelling";
       const introParagraph = `The case presented is related to a <strong>${formData.gender.toLowerCase()}</strong> patient, age between <strong>${formData.ageGroup}</strong>. Tooth <strong>#${formData.toothNumber}</strong> (${toothType}) is <strong>${casePresText.toLowerCase()}</strong> with <strong>${remainingPercent}%</strong> remaining coronal tooth structure.`;
 
-      // Explanation note
+      // Updated explanation note — includes obturation narrative for retreatment cases
       const explanationNote = prognosisResult.isPractical
-        ? `This tooth is considered <strong>practical to retain</strong>. The estimated 4-year survival rate meets the minimum threshold required for a ${toothType} tooth. The remaining coronal structure (${remainingPercent}%) provides an acceptable foundation for final restoration.`
-        : `Retention of this tooth is considered <strong>impractical</strong>. The estimated 4-year survival rate (${prognosisResult.survival}%) falls below the acceptable threshold for a ${toothType} tooth.`;
+        ? `This tooth is considered <strong>practical to retain</strong>. The estimated 4-year survival rate meets the minimum threshold required for a ${toothType} tooth. The remaining coronal structure (${remainingPercent}%) provides an acceptable foundation for final restoration.${isRetreatmentCase && prognosisResult.obturationNarrative ? " " + prognosisResult.obturationNarrative : ""}`
+        : `Retention of this tooth is considered <strong>impractical</strong>. The estimated 4-year survival rate (${prognosisResult.survival}%) falls below the acceptable threshold for a ${toothType} tooth.${isRetreatmentCase && prognosisResult.obturationNarrative ? " " + prognosisResult.obturationNarrative : ""}`;
 
-      // VPT age note
       let vptAgeNote = "";
       if (treatmentRec === "Vital Pulp Therapy") {
         if (["1-12 years","13-25 years"].includes(formData.ageGroup)) {
@@ -1181,29 +1403,23 @@ export default function EndoDecide() {
         }
       }
 
-      // Medication flag
       let medicationFlag = "";
       if (parseInt(formData.medications) >= 2 && parseInt(formData.prostho) >= 1) {
         medicationFlag = "Patient is on medications requiring modification — if surgical procedures are planned, consider MRONJ risk and specialist consultation.";
       }
 
-      // Build result object
       const resultData = {
-        // Tool metadata
         toolType: crackConfirmed ? "combined" : "predictor",
         urgency,
-        // Patient
         toothNumber:   formData.toothNumber,
         toothType,
         gender:        formData.gender,
         ageGroup:      formData.ageGroup,
-        // Diagnosis (AAE 2013)
         pulpalDiagnosis:    pulpalDx,
         periapicalDiagnosis: periapicalDx,
         pulpalInconsistent:    pulpalResult.isInconsistent,
         periapicalInconsistent: periapicalResult.isInconsistent,
         inconsistencyNotes: inconsistencies,
-        // Prognosis
         survivalPercentage: prognosisResult.survival,
         survivalRange:      prognosisResult.survivalRange,
         isPractical:        prognosisResult.isPractical,
@@ -1212,18 +1428,25 @@ export default function EndoDecide() {
         tier1Deductions:    prognosisResult.tier1Deductions,
         tier2Deductions:    prognosisResult.tier2Deductions,
         tier3Deductions:    prognosisResult.tier3Deductions,
+        // NEW
+        tier4Deductions:          prognosisResult.tier4Deductions,
+        isPostWithoutCrownOverride: prognosisResult.isPostWithoutCrownOverride,
+        obturationNarrative:       prognosisResult.obturationNarrative,
+        isRetreatmentCase,
+        previousAttempts:    formData.previousAttempts,
+        existingObturation:  formData.existingObturation,
+        restorationQuality:  formData.restorationQuality,
+        postWithoutCrown:    formData.postWithoutCrown,
+        //
         isImpracticalOverride: prognosisResult.isImpracticalOverride,
         overrideReason:     prognosisResult.overrideReason,
-        // Treatment
         treatmentRec,
         procedureCategory: detectProcedureCategory(pulpalDx, treatmentRec, prognosisResult.isPractical),
         affectingFactors,
-        // Structure
         remainingPercent,
         walls:   { ...walls },
         occlusal,
         ferrule,
-        // Crack
         crackPresent:    formData.crackPresent === "yes",
         crackConfirmed,
         crackMethods: {
@@ -1234,18 +1457,14 @@ export default function EndoDecide() {
         biteTest:      formData.biteTest      === "yes",
         marginalRidge: formData.marginalRidge === "yes",
         iowa,
-        // VRF
         vrfFlag,
-        // Probing
         sites: sites.map(s => ({ id: s.id, label: s.label, short: s.short, level: s.level })),
         deepCount,
-        // Flags
         vptAgeNote,
         medicationFlag,
         introParagraph,
         explanationNote,
         casePresText,
-        // Full form snapshot for case saving
         formData: { ...formData },
       };
 
@@ -1263,24 +1482,19 @@ export default function EndoDecide() {
       <Navigation />
       <div className="min-h-screen bg-[#0a1428] text-white">
 
-        {/* ── HERO — urgency-reactive ── */}
+        {/* ── HERO ── */}
         <div className="relative h-[320px] md:h-[360px] bg-cover bg-center overflow-hidden"
           style={{ backgroundImage: "url('https://iili.io/Bw4dt99.jpg')" }}>
           <div className={`absolute inset-0 bg-gradient-to-b ${urgCfg.heroBg} transition-all duration-700`} />
-
-          {/* Logo */}
           <div className="absolute top-5 left-6 z-20">
             <Image src="https://iili.io/B6RcxlS.png" alt="Endoprognosis Logo"
               width={160} height={55} className="h-10 w-auto" priority />
           </div>
-
-          {/* Urgency badge — top right */}
           <div className="absolute top-5 right-6 z-20">
             <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full border ${urgCfg.badge} transition-all duration-500`}>
               {urgCfg.badgeText}
             </span>
           </div>
-
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6 pt-8">
             <p className="text-[11px] tracking-[4px] mb-3 transition-colors duration-500"
               style={{ color: urgCfg.accent + "99" }}>
@@ -1396,8 +1610,6 @@ export default function EndoDecide() {
 
           {/* ══ SECTION 4: CLINICAL EXAMINATION ══ */}
           <Section accent="#10b981" title="Clinical Examination">
-
-            {/* Oral hygiene + perio */}
             <div className="grid md:grid-cols-2 gap-5 mb-6">
               <div>
                 <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Oral Hygiene Status</label>
@@ -1420,7 +1632,6 @@ export default function EndoDecide() {
               </div>
             </div>
 
-            {/* ── UNIFIED DIAGRAM ── */}
             <UnifiedDiagram
               walls={walls}
               occlusal={occlusal}
@@ -1474,12 +1685,9 @@ export default function EndoDecide() {
                       Duration of lingering is the key diagnostic variable — not intensity alone.
                     </p>
                   </div>
-
                   <div className="grid md:grid-cols-2 gap-5 mt-4">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
-                        Spontaneous Pain
-                      </label>
+                      <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Spontaneous Pain</label>
                       <select name="spontaneous" value={formData.spontaneous}
                         onChange={handleSelectChange} className={sel}>
                         <option value="no">No</option>
@@ -1487,9 +1695,7 @@ export default function EndoDecide() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">
-                        Nocturnal Pain (wakes patient)
-                      </label>
+                      <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Nocturnal Pain (wakes patient)</label>
                       <select name="nocturnal" value={formData.nocturnal}
                         onChange={handleSelectChange} className={sel}>
                         <option value="no">No</option>
@@ -1501,7 +1707,7 @@ export default function EndoDecide() {
               </div>
             )}
 
-            {/* Periapical clinical tests — independent axis */}
+            {/* Periapical clinical tests */}
             <div className="mt-6 border-t border-white/8 pt-5">
               <p className="text-xs text-gray-400 uppercase tracking-wider mb-1 font-semibold">
                 Periapical Clinical Tests
@@ -1564,7 +1770,6 @@ export default function EndoDecide() {
               </div>
             </div>
 
-            {/* Live diagnosis preview */}
             <div className="mt-6">
               <LiveDiagnosisBadge
                 pulpal={pulpalResult.diagnosis}
@@ -1577,7 +1782,12 @@ export default function EndoDecide() {
           {/* ══ SECTION 5: CRACK ASSESSMENT ══ */}
           <CrackSection formData={formData} onChange={handleChange} />
 
-          {/* ══ SECTION 6: ENDODONTIC COMPLEXITY ══ */}
+          {/* ══ SECTION 6: RETREATMENT HISTORY (Tier 4) — gated ══ */}
+          {isRetreatmentCase && (
+            <RetreatmentSection formData={formData} onChange={handleChange} />
+          )}
+
+          {/* ══ SECTION 7: ENDODONTIC COMPLEXITY ══ */}
           <Section accent="#f59e0b" title="Endodontic Complexity">
             <div className="space-y-5">
               <div>
@@ -1602,7 +1812,6 @@ export default function EndoDecide() {
                 )}
               </div>
 
-              {/* Instrument separation */}
               <div>
                 <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Instrument Separation</label>
                 <select name="instrumentSep" value={formData.instrumentSep}
@@ -1634,7 +1843,6 @@ export default function EndoDecide() {
                 )}
               </div>
 
-              {/* Perforation */}
               <div>
                 <label className="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Root Perforation</label>
                 <select name="perforation" value={formData.perforation}
@@ -1667,7 +1875,7 @@ export default function EndoDecide() {
             </div>
           </Section>
 
-          {/* ══ SECTION 7: PROSTHODONTIC CONTEXT ══ */}
+          {/* ══ SECTION 8: PROSTHODONTIC CONTEXT ══ */}
           <Section accent="#a855f7" title="Prosthodontic Context">
             <select name="prostho" value={formData.prostho}
               onChange={handleSelectChange} className={sel}>
@@ -1703,7 +1911,7 @@ export default function EndoDecide() {
           </button>
 
           <p className="text-center text-xs text-gray-600 leading-relaxed">
-            AAE 2013 terminology · Iowa Classification (Krell & Caplan 2018) · Clinical decision support only
+            AAE 2013 terminology · Iowa Classification (Krell & Caplan 2018) · Tier 4 evidence: Zgur-Er et al. 2025 · Clinical decision support only
           </p>
         </div>
 
