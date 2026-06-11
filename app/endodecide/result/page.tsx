@@ -301,6 +301,9 @@ export default function EndoDecideResult() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
+  // ── Ref guard — prevents double-fire from StrictMode or rapid clicks ──
+  const isSavingRef = useRef(false);
+
   useEffect(() => {
     const raw = localStorage.getItem("lastEndoDecideResult");
     if (raw) {
@@ -342,24 +345,33 @@ export default function EndoDecideResult() {
   // SAVE CASE — FIXED: authLoading guard + saved flag + localStorage in finally
   // ════════════════════════════════════════════════════════════
   const handleSaveCase = async () => {
-    // ── Guard 1: wait for Firebase auth to resolve ──
+    // ── Guard 1: ref-based lock prevents double-fire (StrictMode / rapid clicks) ──
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+
+    // ── Guard 2: wait for Firebase auth to resolve ──
     if (authLoading) {
+      isSavingRef.current = false;
       alert("Please wait — session is loading.");
       return;
     }
     if (!caseName.trim() || !phoneNumber.trim()) {
+      isSavingRef.current = false;
       alert("Please fill in Case Name and Phone Number.");
       return;
     }
-    if (!user) { alert("Please log in to save cases."); return; }
-    if (saving) return;
+    if (!user) {
+      isSavingRef.current = false;
+      alert("Please log in to save cases.");
+      return;
+    }
     setSaving(true);
 
     // ── Synchronous flag — localStorage removal goes in finally, not try ──
     let saved = false;
 
     try {
-      // Duplicate check
+      // ── Duplicate check — use flag, never return inside try ──
       const q = query(
         collection(db, "cases"),
         where("userId",      "==", user.uid),
@@ -367,6 +379,7 @@ export default function EndoDecideResult() {
         where("type",        "==", "endodecide")
       );
       const snap = await getDocs(q);
+      let isDuplicate = false;
       if (!snap.empty) {
         for (const d of snap.docs) {
           const ex = d.data();
@@ -375,11 +388,14 @@ export default function EndoDecideResult() {
             ex.pulpalDiagnosis     === result.pulpalDiagnosis &&
             ex.periapicalDiagnosis === result.periapicalDiagnosis
           ) {
-            alert("This case was already saved. Check My Cases.");
-            setSaving(false);
-            return;
+            isDuplicate = true;
+            break;
           }
         }
+      }
+      if (isDuplicate) {
+        alert("This case was already saved. Check My Cases.");
+        return;   // finally will still run and set saving=false
       }
 
       await addDoc(collection(db, "cases"), {
@@ -475,6 +491,7 @@ export default function EndoDecideResult() {
       alert("Failed to save case. Please try again.");
     } finally {
       setSaving(false);
+      isSavingRef.current = false;   // always release lock
       // localStorage removal is outside try — cannot trigger catch
       if (saved) {
         try { localStorage.removeItem("lastEndoDecideResult"); } catch {}
