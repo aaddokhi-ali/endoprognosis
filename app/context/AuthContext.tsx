@@ -1,25 +1,24 @@
 // app/context/AuthContext.tsx
 "use client";
 
-import { 
-  createContext, 
-  useContext, 
-  useEffect, 
-  useState, 
-  ReactNode 
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
 } from "react";
 
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
   onAuthStateChanged,
-  onIdTokenChanged,
   setPersistence,
   browserLocalPersistence,
   sendEmailVerification,
   sendPasswordResetEmail,
-  User 
+  User,
 } from "firebase/auth";
 
 import { auth } from "../firebaseConfig";
@@ -39,55 +38,36 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [user, setUser]       = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);   // true until FIRST auth event fires
+  const [error, setError]     = useState<string | null>(null);
 
-  // Set persistence once
+  // Set persistence once on mount
   useEffect(() => {
     setPersistence(auth, browserLocalPersistence).catch(console.error);
   }, []);
 
-  // Main auth listener - Combined for maximum reliability in Next.js / Netlify
+  // ── Single auth listener — no race condition ──
+  // onAuthStateChanged is the canonical Firebase listener.
+  // onIdTokenChanged was added redundantly and caused the null→user flash.
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-      console.log("onAuthStateChanged triggered:", currentUser?.uid || "null");
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (!currentUser) setLoading(false);
+      setLoading(false);   // always set loading=false regardless of user state
     });
-
-    const unsubscribeToken = onIdTokenChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        try {
-          await currentUser.reload();
-          await currentUser.getIdToken(false); // false = don't force refresh every time
-          setUser(currentUser);
-        } catch (err: any) {
-          console.error("Token refresh error:", err);
-          setUser(currentUser); // fallback to current user
-        }
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
-
-    return () => {
-      unsubscribeAuth();
-      unsubscribeToken();
-    };
+    return () => unsubscribe();
   }, []);
 
+  // ── Helpers ──
   const getFriendlyErrorMessage = (err: any): string => {
-    const code = err?.code || '';
-    if (code.includes('email-already-in-use')) return "This email is already registered. Please login instead.";
-    if (code.includes('invalid-email')) return "Please enter a valid email address.";
-    if (code.includes('weak-password')) return "Password should be at least 6 characters long.";
-    if (code.includes('user-not-found') || code.includes('wrong-password')) return "Invalid email or password.";
-    if (code.includes('too-many-requests')) return "Too many failed attempts. Please try again later.";
-    if (code.includes('network-request-failed')) return "Network error. Please check your internet connection.";
-
-    return err?.message?.replace('Firebase: ', '') || "Something went wrong.";
+    const code = err?.code || "";
+    if (code.includes("email-already-in-use"))   return "This email is already registered. Please login instead.";
+    if (code.includes("invalid-email"))          return "Please enter a valid email address.";
+    if (code.includes("weak-password"))          return "Password should be at least 6 characters long.";
+    if (code.includes("user-not-found") || code.includes("wrong-password")) return "Invalid email or password.";
+    if (code.includes("too-many-requests"))      return "Too many failed attempts. Please try again later.";
+    if (code.includes("network-request-failed")) return "Network error. Please check your internet connection.";
+    return err?.message?.replace("Firebase: ", "") || "Something went wrong.";
   };
 
   const getActionCodeSettings = () => ({
@@ -95,11 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     handleCodeInApp: true,
   });
 
+  // ── register ──
   const register = async (email: string, password: string) => {
     setError(null);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
       await sendEmailVerification(userCredential.user, getActionCodeSettings());
       await signOut(auth);
     } catch (err: any) {
@@ -109,23 +89,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── login ──
   const login = async (email: string, password: string) => {
     setError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const loggedInUser = userCredential.user;
+      const loggedInUser   = userCredential.user;
 
+      // Reload once to get fresh emailVerified flag
       await loggedInUser.reload();
-      await loggedInUser.getIdToken(true);
 
-      // Reduced retry attempts for email verification check
+      // Brief retry loop — handles edge case where verification
+      // was just completed and Firebase hasn't propagated yet
       let attempts = 0;
-      const maxAttempts = 4;
-
-      while (!loggedInUser.emailVerified && attempts < maxAttempts) {
+      while (!loggedInUser.emailVerified && attempts < 3) {
         attempts++;
-        console.log(`Verification check attempt ${attempts}/${maxAttempts}`);
-        
         await new Promise(resolve => setTimeout(resolve, 600));
         await loggedInUser.reload();
       }
@@ -135,7 +113,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Please verify your email first. Check your inbox and spam folder.");
       }
 
-      // Success
       localStorage.removeItem("isGuest");
       localStorage.removeItem("guestMode");
 
@@ -146,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── logout ──
   const logout = async () => {
     setError(null);
     try {
@@ -155,10 +133,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── sendVerificationEmail ──
   const sendVerificationEmail = async () => {
-    if (!user) throw new Error("No user is logged in");
-    if (user.emailVerified) throw new Error("Email is already verified");
-
+    if (!user)               throw new Error("No user is logged in");
+    if (user.emailVerified)  throw new Error("Email is already verified");
     try {
       await sendEmailVerification(user, getActionCodeSettings());
     } catch (err: any) {
@@ -167,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── resetPassword ──
   const resetPassword = async (email: string) => {
     setError(null);
     try {
@@ -180,16 +159,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearError = () => setError(null);
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      loading, 
-      login, 
-      register, 
-      logout, 
-      sendVerificationEmail, 
-      resetPassword, 
-      error, 
-      clearError 
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      login,
+      register,
+      logout,
+      sendVerificationEmail,
+      resetPassword,
+      error,
+      clearError,
     }}>
       {children}
     </AuthContext.Provider>
