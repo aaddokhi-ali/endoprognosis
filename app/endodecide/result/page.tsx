@@ -37,6 +37,31 @@ const LEVEL_LABEL: Record<string, string> = {
   deep:       "Deep (≥5mm)",
 };
 
+// ── Crown prep display config ──
+const CROWN_PREP_DISPLAY: Record<string, {
+  label: string; sublabel: string; evidence: string;
+  color: string; bg: string; border: string; hex: string;
+}> = {
+  minimal: {
+    label: "Minimal preparation",
+    sublabel: "3–4 walls intact — sound tooth under crown",
+    evidence: "No catastrophic failure reported with ≥3 walls (Arunpraditkul 2009)",
+    color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", hex: "#10b981",
+  },
+  moderate: {
+    label: "Moderate preparation",
+    sublabel: "1–2 walls remaining — partial structure loss",
+    evidence: "Full coverage crown required; ferrule critical (Juloski 2012, Behr 2009)",
+    color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", hex: "#f59e0b",
+  },
+  aggressive: {
+    label: "Aggressive preparation",
+    sublabel: "No walls / decoronated — maximum structure loss",
+    evidence: "Highest fracture risk; post and crown lengthening required (Behr 2009, Cureus 2025)",
+    color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30", hex: "#ef4444",
+  },
+};
+
 // ── Survival Gauge ──
 function SurvivalGauge({ value, range, accent }: {
   value: number; range: [number, number]; accent: string;
@@ -128,9 +153,14 @@ function DPIBar({ value }: { value: number }) {
 // ── Factor Severity ──
 function getFactorSeverity(factor: string): { dot: string; badge: string; weight: string } {
   const f = factor.toLowerCase();
-  if (f.includes("no ferrule") || f.includes("advanced") || f.includes("instrument sep") || f.includes("perforation") || f.includes("impractical") || f.includes("post present without") || f.includes("fracture risk") || f.includes("100% of extractions"))
+  if (f.includes("no ferrule") || f.includes("advanced") || f.includes("instrument sep") ||
+      f.includes("perforation") || f.includes("impractical") || f.includes("post present without") ||
+      f.includes("fracture risk") || f.includes("100% of extractions") || f.includes("decoronated"))
     return { dot: "bg-red-500",   badge: "bg-red-500/15 text-red-400",     weight: "High impact" };
-  if (f.includes("periapical") || f.includes("insufficient ferrule") || f.includes("high endo") || f.includes("prosthodontic") || f.includes("moderate") || f.includes("poor coronal") || f.includes("6.9") || f.includes("retreatment attempt") || f.includes("extraradicular"))
+  if (f.includes("periapical") || f.includes("insufficient ferrule") || f.includes("high endo") ||
+      f.includes("prosthodontic") || f.includes("moderate") || f.includes("poor coronal") ||
+      f.includes("6.9") || f.includes("retreatment attempt") || f.includes("extraradicular") ||
+      f.includes("crown preparation"))
     return { dot: "bg-amber-500", badge: "bg-amber-500/15 text-amber-400", weight: "Moderate impact" };
   return   { dot: "bg-blue-400",  badge: "bg-blue-500/15 text-blue-400",   weight: "Contributing" };
 }
@@ -161,10 +191,10 @@ function TierBreakdown({ t1, t2, t3, t4, baseline, isRetreatment }: {
   t1: number; t2: number; t3: number; t4: number; baseline: number; isRetreatment: boolean;
 }) {
   const items = [
-    { label: "Baseline",                     value:  baseline, color: "#10b981" },
-    { label: "Tier 1 — Tooth factors",        value: -t1,       color: t1 > 0 ? "#f59e0b" : "#10b981" },
-    { label: "Tier 2 — Patient factors",      value: -t2,       color: t2 > 0 ? "#f97316" : "#10b981" },
-    { label: "Tier 3 — Procedural",           value: -t3,       color: t3 > 0 ? "#ef4444" : "#10b981" },
+    { label: "Baseline",                      value:  baseline, color: "#10b981" },
+    { label: "Tier 1 — Tooth factors",         value: -t1,       color: t1 > 0 ? "#f59e0b" : "#10b981" },
+    { label: "Tier 2 — Patient factors",       value: -t2,       color: t2 > 0 ? "#f97316" : "#10b981" },
+    { label: "Tier 3 — Procedural",            value: -t3,       color: t3 > 0 ? "#ef4444" : "#10b981" },
     ...(isRetreatment ? [{ label: "Tier 4 — Retreatment history", value: -t4, color: t4 > 0 ? "#ef4444" : "#10b981" }] : []),
   ];
   return (
@@ -185,9 +215,11 @@ function TierBreakdown({ t1, t2, t3, t4, baseline, isRetreatment }: {
 
 // ── Retreatment Summary Panel ──
 function RetreatmentSummaryPanel({ result }: { result: any }) {
-  const { previousAttempts, existingObturation, restorationQuality, postWithoutCrown, isPostWithoutCrownOverride, obturationNarrative, tier4Deductions } = result;
+  const { previousAttempts, existingObturation, restorationQuality, postWithoutCrown,
+    isPostWithoutCrownOverride, obturationNarrative, tier4Deductions } = result;
   const attemptsLabel: Record<string, string> = {
-    first: "First retreatment", second: "Second retreatment", third_or_more: "Third or more — surgical option indicated",
+    first: "First retreatment", second: "Second retreatment",
+    third_or_more: "Third or more — surgical option indicated",
   };
   const obtCfg  = existingObturation === "inadequate"
     ? { text: "Inadequate", color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/25" }
@@ -195,6 +227,7 @@ function RetreatmentSummaryPanel({ result }: { result: any }) {
   const restCfg = restorationQuality === "poor"
     ? { text: "Poor", color: "text-red-400",     bg: "bg-red-500/10",     border: "border-red-500/25" }
     : { text: "Good", color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/25" };
+
   return (
     <Panel title="Retreatment History — Tier 4" accent="#06b6d4" tag="Retreatment Case">
       {isPostWithoutCrownOverride && (
@@ -224,13 +257,17 @@ function RetreatmentSummaryPanel({ result }: { result: any }) {
         </div>
         <div className={`rounded-2xl p-4 border ${postWithoutCrown === "yes" ? "bg-red-500/10 border-red-500/25" : "bg-white/3 border-white/8"}`}>
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Post Without Crown</p>
-          <p className={`text-sm font-bold ${postWithoutCrown === "yes" ? "text-red-400" : "text-emerald-400"}`}>{postWithoutCrown === "yes" ? "Yes — critical risk" : "No"}</p>
+          <p className={`text-sm font-bold ${postWithoutCrown === "yes" ? "text-red-400" : "text-emerald-400"}`}>
+            {postWithoutCrown === "yes" ? "Yes — critical risk" : "No"}
+          </p>
           {postWithoutCrown === "yes" && <p className="text-[10px] text-red-400/70 mt-1">Fracture risk extreme — 25.6% survival</p>}
         </div>
         <div className={`rounded-2xl p-4 border ${obtCfg.bg} ${obtCfg.border}`}>
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Existing Obturation</p>
           <p className={`text-sm font-bold ${obtCfg.color}`}>{obtCfg.text}</p>
-          <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">{existingObturation === "inadequate" ? "Intraradicular cause likely — correctable" : "Consider extraradicular cause"}</p>
+          <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+            {existingObturation === "inadequate" ? "Intraradicular cause likely — correctable" : "Consider extraradicular cause"}
+          </p>
         </div>
         <div className={`rounded-2xl p-4 border ${restCfg.bg} ${restCfg.border}`}>
           <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Restoration Quality</p>
@@ -283,25 +320,101 @@ function InconsistencyAlert({ notes }: { notes: string[] }) {
 }
 
 // ════════════════════════════════════════════════════════════
+// CROWN PREP SVG — result page read-only version
+// ════════════════════════════════════════════════════════════
+function CrownPrepResultCard({ crownPrep }: { crownPrep: string }) {
+  const cfg = CROWN_PREP_DISPLAY[crownPrep];
+  if (!cfg) return null;
+
+  const wallColor =
+    crownPrep === "minimal"    ? "rgba(16,185,129,0.65)"  :
+    crownPrep === "moderate"   ? "rgba(245,158,11,0.65)"  :
+    "rgba(239,68,68,0.65)";
+
+  const ringColor = cfg.hex;
+
+  return (
+    <div className={`rounded-2xl border p-4 mb-5 ${cfg.bg} ${cfg.border}`}>
+      <div className="flex items-start gap-5 flex-wrap">
+
+        {/* Mini SVG tooth */}
+        <div className="flex-shrink-0">
+          <svg width="100" height="100" viewBox="0 0 220 220">
+            <circle cx="110" cy="110" r="100" fill="none" stroke={ringColor}
+              strokeWidth="2" strokeDasharray="6 4" opacity="0.4" />
+            <path d="M 45 45 L 175 45 L 155 75 L 65 75 Z" fill={wallColor} stroke={ringColor} strokeWidth="1.5" />
+            <path d="M 65 145 L 155 145 L 175 175 L 45 175 Z" fill={wallColor} stroke={ringColor} strokeWidth="1.5" />
+            <path d="M 45 45 L 75 65 L 75 155 L 45 175 Z"    fill={wallColor} stroke={ringColor} strokeWidth="1.5" />
+            <path d="M 175 45 L 175 175 L 145 155 L 145 65 Z" fill={wallColor} stroke={ringColor} strokeWidth="1.5" />
+            <rect x="75" y="65" width="70" height="90" rx="10"
+              fill={crownPrep === "aggressive" ? "rgba(239,68,68,0.2)"
+                  : crownPrep === "moderate"   ? "rgba(245,158,11,0.12)"
+                  : "rgba(16,185,129,0.1)"}
+              stroke={ringColor} strokeWidth="1.5" />
+            <rect x="38" y="38" width="144" height="144" rx="18"
+              fill="none" stroke="rgba(255,255,255,0.12)"
+              strokeWidth="2.5" strokeDasharray="8 4" />
+            <text x="110" y="106" textAnchor="middle" fontSize="18" fill={ringColor} fontWeight="900">
+              {crownPrep === "minimal" ? "~90%" : crownPrep === "moderate" ? "~50%" : "~5%"}
+            </text>
+            <text x="110" y="122" textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.4)">remaining</text>
+          </svg>
+        </div>
+
+        {/* Text content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider">Crown preparation assessed</p>
+            <span className="text-[9px] bg-white/8 border border-white/12 text-gray-500 px-2 py-0.5 rounded-full">
+              Pre-fill applied · walls manually editable
+            </span>
+          </div>
+          <p className={`text-base font-black mb-1 ${cfg.color}`}>{cfg.label}</p>
+          <p className="text-xs text-gray-400 mb-2">{cfg.sublabel}</p>
+          <div className="flex items-start gap-1.5">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5" style={{ color: cfg.hex }}>
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/>
+              <path d="M8 7v4M8 5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+            </svg>
+            <p className="text-[10px] leading-relaxed" style={{ color: cfg.hex + "99" }}>{cfg.evidence}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Aggressive-specific warning */}
+      {crownPrep === "aggressive" && (
+        <div className="mt-3 flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-red-400 flex-shrink-0 mt-0.5">
+            <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+            <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+          <p className="text-[10px] text-red-400/80 leading-relaxed">
+            Decoronated tooth — post-and-core placement and possible crown lengthening or orthodontic extrusion required.
+            Highest fracture risk category. Evidence: Behr et al. 2009 · Cureus systematic review 2025.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════
 export default function EndoDecideResult() {
-  const [result, setResult]                   = useState<any>(null);
-  const [showSaveModal, setShowSaveModal]     = useState(false);
-  const [caseName, setCaseName]               = useState("");
-  const [phoneNumber, setPhoneNumber]         = useState("");
-  const [followUpDate, setFollowUpDate]       = useState("");
-  const [furtherNote, setFurtherNote]         = useState("");
-  const [saving, setSaving]                   = useState(false);
-  const [saveSuccess, setSaveSuccess]         = useState(false);
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [result, setResult]                       = useState<any>(null);
+  const [showSaveModal, setShowSaveModal]         = useState(false);
+  const [caseName, setCaseName]                   = useState("");
+  const [phoneNumber, setPhoneNumber]             = useState("");
+  const [followUpDate, setFollowUpDate]           = useState("");
+  const [furtherNote, setFurtherNote]             = useState("");
+  const [saving, setSaving]                       = useState(false);
+  const [saveSuccess, setSaveSuccess]             = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF]     = useState(false);
   const [showTierBreakdown, setShowTierBreakdown] = useState(false);
 
-  // ── FIX: consume authLoading to prevent save during null-flash ──
   const { user, loading: authLoading } = useAuth();
-  const router = useRouter();
-
-  // ── Ref guard — prevents double-fire from StrictMode or rapid clicks ──
+  const router     = useRouter();
   const isSavingRef = useRef(false);
 
   useEffect(() => {
@@ -341,15 +454,33 @@ export default function EndoDecideResult() {
   const tier4Deductions      = result.tier4Deductions ?? 0;
   const iowaCfg              = iowa ? IOWA_CONFIG[iowa.stage] : null;
 
+  // ── Crown prep fields ──
+  const crownPrep         = result.crownPrep         ?? "not_applicable";
+  const restorationStatus = result.restorationStatus ?? "none";
+  const restorationNote   = result.restorationNote   ?? "";
+  const crownAccessible   = result.crownAccessible   ?? "";
+  const crownRemoved      = result.crownRemoved      ?? "";
+
+  // Crown prep card shows whenever a prep level was assessed — not gated on isRetreatmentCase.
+  // Vital crowned teeth (and all non-crown restorations with pre-filled walls) are valid cases.
+  const showCrownPrep  =
+    crownPrep !== "not_applicable" &&
+    crownPrep !== "cannot_assess" &&
+    CROWN_PREP_DISPLAY[crownPrep] != null;
+
+  const RESTO_LABEL: Record<string, string> = {
+    none: "", veneer: "Veneer", inlay: "Inlay", onlay: "Onlay",
+    endocrown: "Endocrown", crown: "Full Crown",
+  };
+  const showRestoLabel = restorationStatus !== "none";
+
   // ════════════════════════════════════════════════════════════
-  // SAVE CASE — FIXED: authLoading guard + saved flag + localStorage in finally
+  // SAVE CASE
   // ════════════════════════════════════════════════════════════
   const handleSaveCase = async () => {
-    // ── Guard 1: ref-based lock prevents double-fire (StrictMode / rapid clicks) ──
     if (isSavingRef.current) return;
     isSavingRef.current = true;
 
-    // ── Guard 2: wait for Firebase auth to resolve ──
     if (authLoading) {
       isSavingRef.current = false;
       alert("Please wait — session is loading.");
@@ -366,12 +497,9 @@ export default function EndoDecideResult() {
       return;
     }
     setSaving(true);
-
-    // ── Synchronous flag — localStorage removal goes in finally, not try ──
     let saved = false;
 
     try {
-      // ── Duplicate check — use flag, never return inside try ──
       const q = query(
         collection(db, "cases"),
         where("userId",      "==", user.uid),
@@ -387,63 +515,69 @@ export default function EndoDecideResult() {
             ex.survivalEstimate    === survival &&
             ex.pulpalDiagnosis     === result.pulpalDiagnosis &&
             ex.periapicalDiagnosis === result.periapicalDiagnosis
-          ) {
-            isDuplicate = true;
-            break;
-          }
+          ) { isDuplicate = true; break; }
         }
       }
       if (isDuplicate) {
         alert("This case was already saved. Check My Cases.");
-        return;   // finally will still run and set saving=false
+        return;
       }
 
       await addDoc(collection(db, "cases"), {
-        type:          "endodecide",
-        toolType:      result.toolType ?? "predictor",
-        caseName:      caseName.trim(),
-        phoneNumber:   phoneNumber.trim(),
-        followUpDate:  followUpDate || null,
-        furtherNote:   furtherNote.trim(),
+        type:         "endodecide",
+        toolType:     result.toolType ?? "predictor",
+        caseName:     caseName.trim(),
+        phoneNumber:  phoneNumber.trim(),
+        followUpDate: followUpDate || null,
+        furtherNote:  furtherNote.trim(),
 
-        toothNumber:   result.toothNumber  ?? "",
-        toothType:     result.toothType    ?? "Molar",
-        gender:        result.gender       ?? "",
-        ageGroup:      result.ageGroup     ?? "",
-        asa:           result.formData?.medical ?? "0",
+        toothNumber:  result.toothNumber  ?? "",
+        toothType:    result.toothType    ?? "Molar",
+        gender:       result.gender       ?? "",
+        ageGroup:     result.ageGroup     ?? "",
+        asa:          result.formData?.medical ?? "0",
 
         urgency,
-        casePresText:  result.casePresText ?? "",
+        casePresText: result.casePresText ?? "",
 
         pulpalDiagnosis:     result.pulpalDiagnosis     ?? "",
         periapicalDiagnosis: result.periapicalDiagnosis ?? "",
         inconsistencyNotes:  inconsistencies,
 
-        survivalEstimate:    survival,
-        survivalRange:       range,
-        epPoints:            result.totalDPI    ?? 0,
+        survivalEstimate:  survival,
+        survivalRange:     range,
+        epPoints:          result.totalDPI  ?? 0,
         isPractical,
         threshold,
-        treatmentRec:        result.treatmentRec ?? "",
-        procedureCategory:   result.procedureCategory ?? "",
-        affectingFactors:    factors,
-        treatmentStatus:     "No Treatment",
+        treatmentRec:      result.treatmentRec ?? "",
+        procedureCategory: result.procedureCategory ?? "",
+        affectingFactors:  factors,
+        treatmentStatus:   "No Treatment",
 
-        remainingStructure:  result.remainingPercent ?? 0,
-        walls:               result.walls    ?? {},
-        occlusal:            result.occlusal ?? "access_only",
-        ferrule:             result.ferrule  ?? {},
+        remainingStructure: result.remainingPercent ?? 0,
+        walls:              result.walls    ?? {},
+        occlusal:           result.occlusal ?? "access_only",
+        ferrule:            result.ferrule  ?? {},
 
-        periodontalStatus:   result.formData?.perio ?? "0",
+        // ── Restoration + crown prep fields saved to Firestore ──
+        restorationStatus:      restorationStatus,
+        restorationNote:        restorationNote        || null,
+        crownAccessible:        crownAccessible        || null,
+        crownRemoved:           crownRemoved           || null,
+        crownPrep:              crownPrep,
+        crownPrepLabel:         result.crownPrepLabel         ?? null,
+        crownAssessmentPending: result.crownAssessmentPending ?? false,
+
+        periodontalStatus: result.formData?.perio ?? "0",
         sites,
-        deepCount:           result.deepCount ?? 0,
+        deepCount:         result.deepCount ?? 0,
 
         crackPresent:    result.crackPresent    ?? false,
         crackConfirmed:  result.crackConfirmed  ?? false,
         crackMethods:    result.crackMethods    ?? {},
         iowa:            iowa ?? null,
-        iowaStage:       iowa?.stage       ?? null,
-        iowaSuccessRate: iowa?.successRate  ?? null,
+        iowaStage:       iowa?.stage      ?? null,
+        iowaSuccessRate: iowa?.successRate ?? null,
 
         vrfFlag,
 
@@ -481,21 +615,15 @@ export default function EndoDecideResult() {
       saved = true;
       setSaveSuccess(true);
       setShowSaveModal(false);
-      setCaseName("");
-      setPhoneNumber("");
-      setFollowUpDate("");
-      setFurtherNote("");
+      setCaseName(""); setPhoneNumber(""); setFollowUpDate(""); setFurtherNote("");
 
     } catch (err) {
       console.error("Save failed:", err);
       alert("Failed to save case. Please try again.");
     } finally {
       setSaving(false);
-      isSavingRef.current = false;   // always release lock
-      // localStorage removal is outside try — cannot trigger catch
-      if (saved) {
-        try { localStorage.removeItem("lastEndoDecideResult"); } catch {}
-      }
+      isSavingRef.current = false;
+      if (saved) { try { localStorage.removeItem("lastEndoDecideResult"); } catch {} }
     }
   };
 
@@ -515,6 +643,27 @@ export default function EndoDecideResult() {
       const factorRows = factors.map((f: string) =>
         `<li style="padding:6px 0;border-bottom:1px solid #1e293b;font-size:12px;color:#e2e8f0;">• ${f}</li>`
       ).join("");
+
+      const crownPrepBlock = showCrownPrep ? (() => {
+        const cfg = CROWN_PREP_DISPLAY[crownPrep];
+        const hexColor = cfg.hex;
+        return `
+          <div style="background:${hexColor}15;border:1.5px solid ${hexColor}40;border-radius:12px;padding:16px;margin-bottom:16px;">
+            <p style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;">Crown Preparation Assessed</p>
+            <p style="font-size:16px;font-weight:900;color:${hexColor};margin:0 0 4px;">${cfg.label}</p>
+            <p style="font-size:12px;color:#94a3b8;margin:0 0 6px;">${cfg.sublabel}</p>
+            <p style="font-size:10px;color:${hexColor}80;font-style:italic;">${cfg.evidence}</p>
+            ${crownPrep === "aggressive" ? `<p style="font-size:10px;color:#ef4444;margin-top:8px;">⚠ Decoronated tooth — post and crown lengthening required. Highest fracture risk category.</p>` : ""}
+          </div>`;
+      })() : (showRestoLabel && restorationStatus !== "crown") ? (() => {
+        const restoHex = restorationStatus === "endocrown" ? "#f59e0b" : "#a78bfa";
+        return `
+          <div style="background:${restoHex}12;border:1.5px solid ${restoHex}40;border-radius:12px;padding:14px;margin-bottom:16px;">
+            <p style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;">Existing Restoration</p>
+            <p style="font-size:15px;font-weight:800;color:${restoHex};margin:0 0 4px;">${RESTO_LABEL[restorationStatus]}</p>
+            ${restorationNote ? `<p style="font-size:11px;color:#94a3b8;margin:0;font-style:italic;">${restorationNote}</p>` : ""}
+          </div>`;
+      })() : "";
 
       const iowaBlock = iowa ? `
         <div style="background:${iowaCfg?.bg.replace("bg-","").replace("/10","") ?? "#0d1a30"};border:2px solid ${iowa.stage === "I" ? "#10b981" : iowa.stage === "II" ? "#f59e0b" : iowa.stage === "III" ? "#f97316" : "#ef4444"};border-radius:12px;padding:20px;margin-bottom:16px;">
@@ -605,6 +754,7 @@ export default function EndoDecideResult() {
             ${result.treatmentRec ? `<p style="margin-top:12px;padding:10px 16px;background:#0a1428;border-radius:10px;font-size:14px;color:#10b981;">Treatment: ${result.treatmentRec}</p>` : ""}
           </div>
           ${factorRows ? `<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-bottom:16px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Factors Affecting Survivability</p><ul style="list-style:none;padding:0;margin:0;">${factorRows}</ul></div>` : ""}
+          ${crownPrepBlock}
           ${tier4Block}${iowaBlock}${vrfBlock}
           ${sites.length > 0 ? `<div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:16px;padding:20px;margin-bottom:16px;"><p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">Periodontal Probing</p><ul style="list-style:none;padding:0;margin:0;">${siteRows}</ul></div>` : ""}
           ${result.vptAgeNote ? `<div style="background:#0c1a0c;border:1px solid #166534;border-radius:12px;padding:16px;margin-bottom:12px;"><p style="font-size:12px;color:#86efac;">ℹ ${result.vptAgeNote}</p></div>` : ""}
@@ -649,6 +799,9 @@ export default function EndoDecideResult() {
     router.push("/restorative");
   };
 
+  // ════════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════════
   return (
     <ProtectedRoute>
       <Navigation />
@@ -691,6 +844,16 @@ export default function EndoDecideResult() {
               {isRetreatmentCase && (
                 <div className="flex items-center gap-2 bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider">
                   Retreatment Case — Tier 4 Applied
+                </div>
+              )}
+              {showRestoLabel && !showCrownPrep && (
+                <div className="flex items-center gap-2 bg-violet-500/15 border border-violet-500/30 text-violet-400 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider">
+                  {RESTO_LABEL[restorationStatus]}
+                </div>
+              )}
+              {showCrownPrep && (
+                <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border ${CROWN_PREP_DISPLAY[crownPrep].bg} ${CROWN_PREP_DISPLAY[crownPrep].border} ${CROWN_PREP_DISPLAY[crownPrep].color}`}>
+                  Crown — {CROWN_PREP_DISPLAY[crownPrep].label}
                 </div>
               )}
             </div>
@@ -817,17 +980,17 @@ export default function EndoDecideResult() {
               <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">How the diagnosis was derived</p>
               <div className="space-y-1.5">
                 {[
-                  result.formData?.rootTreated === "yes"          && { label: "Root canal treated tooth",              value: "→ Previously Treated" },
-                  result.formData?.rootAccessed === "yes"         && { label: "Treatment initiated but incomplete",    value: "→ Previously Initiated Therapy" },
-                  result.formData?.coldTest === "none"            && { label: "No cold test response",                value: "→ Pulp Necrosis axis" },
-                  result.formData?.coldTest === "lingering_long"  && { label: "Cold response lingering >30 seconds",  value: "→ Irreversible Pulpitis" },
-                  result.formData?.spontaneous === "yes"          && { label: "Spontaneous pain present",             value: "→ Irreversible Pulpitis" },
-                  result.formData?.nocturnal === "yes"            && { label: "Nocturnal pain (wakes patient)",       value: "→ Irreversible Pulpitis" },
-                  result.formData?.swelling === "yes"             && { label: "Swelling present (priority rule)",     value: "→ Acute Apical Abscess" },
-                  result.formData?.sinus === "yes"                && { label: "Sinus tract present",                  value: "→ Chronic Apical Abscess" },
-                  result.formData?.percussion === "yes"           && { label: "Percussion tenderness",                value: "→ Periapical axis" },
-                  result.formData?.palpation === "yes"            && { label: "Palpation tenderness",                 value: "→ Periapical axis" },
-                  result.formData?.periApical === "yes"           && { label: "Periapical lesion on radiograph",      value: "→ Periapical involvement" },
+                  result.formData?.rootTreated  === "yes"         && { label: "Root canal treated tooth",             value: "→ Previously Treated" },
+                  result.formData?.rootAccessed === "yes"         && { label: "Treatment initiated but incomplete",   value: "→ Previously Initiated Therapy" },
+                  result.formData?.coldTest     === "none"        && { label: "No cold test response",               value: "→ Pulp Necrosis axis" },
+                  result.formData?.coldTest     === "lingering_long" && { label: "Cold response lingering >30 seconds", value: "→ Irreversible Pulpitis" },
+                  result.formData?.spontaneous  === "yes"         && { label: "Spontaneous pain present",            value: "→ Irreversible Pulpitis" },
+                  result.formData?.nocturnal    === "yes"         && { label: "Nocturnal pain (wakes patient)",      value: "→ Irreversible Pulpitis" },
+                  result.formData?.swelling     === "yes"         && { label: "Swelling present (priority rule)",    value: "→ Acute Apical Abscess" },
+                  result.formData?.sinus        === "yes"         && { label: "Sinus tract present",                 value: "→ Chronic Apical Abscess" },
+                  result.formData?.percussion   === "yes"         && { label: "Percussion tenderness",               value: "→ Periapical axis" },
+                  result.formData?.palpation    === "yes"         && { label: "Palpation tenderness",                value: "→ Periapical axis" },
+                  result.formData?.periApical   === "yes"         && { label: "Periapical lesion on radiograph",     value: "→ Periapical involvement" },
                 ].filter(Boolean).map((item: any, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="text-gray-500">{item.label}</span>
@@ -856,7 +1019,7 @@ export default function EndoDecideResult() {
             </Panel>
           )}
 
-          {/* Panel 5: Retreatment (Tier 4) — NEW */}
+          {/* Panel 5: Retreatment (Tier 4) */}
           {isRetreatmentCase && <RetreatmentSummaryPanel result={result} />}
 
           {/* Panel 6A: Iowa Classification */}
@@ -972,30 +1135,67 @@ export default function EndoDecideResult() {
             </Panel>
           )}
 
-          {/* Coronal Structure */}
+          {/* ══ Panel 7: Coronal Structure ══ */}
           {result.walls && (
             <Panel title="Coronal Structure Assessment" accent="#10b981">
+
+              {/* Crown prep result card — shown for any case with an assessed prep level */}
+              {showCrownPrep && <CrownPrepResultCard crownPrep={crownPrep} />}
+
+              {/* Restoration type + note — for veneer / inlay / onlay / endocrown */}
+              {showRestoLabel && !showCrownPrep && restorationStatus !== "crown" && (
+                <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border mb-4 ${restorationStatus === "endocrown" ? "bg-amber-500/8 border-amber-500/25" : "bg-violet-500/8 border-violet-500/20"}`}>
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5" style={{color: restorationStatus === "endocrown" ? "#f59e0b" : "#a78bfa"}}>
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M8 7v4M8 5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                  </svg>
+                  <div>
+                    <p className="text-[10px] font-bold mb-0.5" style={{color: restorationStatus === "endocrown" ? "#f59e0b" : "#a78bfa"}}>{RESTO_LABEL[restorationStatus]}</p>
+                    {restorationNote && <p className="text-[11px] leading-relaxed" style={{color: restorationStatus === "endocrown" ? "#fbbf24" : "#c4b5fd"}}>{restorationNote}</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Remaining structure header */}
               <div className="flex items-center justify-between mb-4">
                 <span className="text-2xl font-black text-[#10b981]">{result.remainingPercent ?? 0}% remaining</span>
                 <span className="text-xs text-gray-500">{100 - (result.remainingPercent ?? 0)}% lost</span>
               </div>
+
+              {/* Per-wall grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                 {(Object.entries(result.walls) as [string, string][]).map(([wall, state]) => (
-                  <div key={wall} className={`rounded-xl p-3 text-center border ${state === "intact" ? "bg-emerald-500/10 border-emerald-500/25" : state === "moderate" ? "bg-amber-500/10 border-amber-500/25" : "bg-red-500/10 border-red-500/25"}`}>
+                  <div key={wall} className={`rounded-xl p-3 text-center border ${
+                    state === "intact"   ? "bg-emerald-500/10 border-emerald-500/25" :
+                    state === "moderate" ? "bg-amber-500/10 border-amber-500/25" :
+                    "bg-red-500/10 border-red-500/25"
+                  }`}>
                     <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1 capitalize">{wall}</p>
-                    <p className={`text-xs font-bold capitalize ${state === "intact" ? "text-emerald-400" : state === "moderate" ? "text-amber-400" : "text-red-400"}`}>{state}</p>
+                    <p className={`text-xs font-bold capitalize ${
+                      state === "intact" ? "text-emerald-400" : state === "moderate" ? "text-amber-400" : "text-red-400"
+                    }`}>{state}</p>
                   </div>
                 ))}
               </div>
+
+              {/* Ferrule badge */}
               {result.ferrule?.label && (
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${result.ferrule.wallsWithFerrule >= 4 ? "bg-emerald-500/8 border-emerald-500/20 text-emerald-400" : result.ferrule.wallsWithFerrule >= 3 ? "bg-amber-500/8 border-amber-500/20 text-amber-400" : "bg-red-500/8 border-red-500/20 text-red-400"}`}>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${
+                  result.ferrule.wallsWithFerrule >= 4 ? "bg-emerald-500/8 border-emerald-500/20 text-emerald-400" :
+                  result.ferrule.wallsWithFerrule >= 3 ? "bg-amber-500/8 border-amber-500/20 text-amber-400" :
+                  "bg-red-500/8 border-red-500/20 text-red-400"
+                }`}>
                   <span>⬡</span><span>{result.ferrule.label}</span>
                 </div>
               )}
+
+              {/* Evidence footnote */}
+              <p className="text-[10px] text-gray-600 mt-3 leading-relaxed">
+                Wall count thresholds: Arunpraditkul & Juntavee 2009 · Juloski et al. 2012 · Systematic review: Cureus 2025.
+              </p>
             </Panel>
           )}
 
-          {/* Probing Map */}
+          {/* Panel 8: Probing Map */}
           {sites.length > 0 && (
             <Panel title="Periodontal Probing Map" accent="#3b82f6">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
@@ -1142,7 +1342,6 @@ export default function EndoDecideResult() {
                   className="flex-1 py-3.5 bg-white/8 hover:bg-white/15 rounded-2xl text-sm font-semibold transition-all">
                   Cancel
                 </button>
-                {/* ── FIX: disabled during authLoading, label reflects state ── */}
                 <button onClick={handleSaveCase}
                   disabled={saving || authLoading || !caseName.trim() || !phoneNumber.trim()}
                   className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-black disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
