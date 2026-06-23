@@ -226,7 +226,7 @@ function LoginContent() {
           alt="Background"
           fill className="object-cover" priority
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/60 to-black/80" />
+        <div className="absolute inset-0 bg-linear-to-br from-black/70 via-black/60 to-black/80" />
       </div>
 
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 sm:px-6 py-8 sm:py-12">

@@ -50,6 +50,9 @@ interface ProcedureStat {
   color: string;
 }
 
+// ── DATE FILTER TYPES ──
+type DateFilterMode = "all" | "month" | "range";
+
 // ── PROCEDURE GROUPING ──
 const PROCEDURE_GROUPS: { key: string; label: string; color: string; match: string[] }[] = [
   { key: "rct",    label: "Root Canal Treatment",   color: "#10b981", match: ["root canal treatment","rct"]        },
@@ -74,6 +77,27 @@ function fmt(n: number, currency: string) {
 function pct(part: number, total: number) {
   if (!total) return "0%";
   return Math.round((part / total) * 100) + "%";
+}
+
+// ── DATE HELPERS ──
+// Cases can carry completedAt either as a Firestore Timestamp ({seconds}) or
+// a plain date string/number. This normalizes either shape to a JS Date,
+// falling back to createdAt if completedAt is missing.
+function getCaseDate(c: ProfitCase): Date | null {
+  const raw = c.completedAt ?? c.createdAt;
+  if (!raw) return null;
+  if (raw.seconds) return new Date(raw.seconds * 1000);
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function monthKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
 // ── STAT CARD ──
@@ -126,6 +150,12 @@ export default function ProfitTrackerPage() {
   const [showReset, setShowReset]         = useState(false);
   const [resetting, setResetting]         = useState(false);
 
+  // ── DATE FILTER STATE ──
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>("all");
+  const [selectedMonth, setSelectedMonth]   = useState<string>(""); // "YYYY-MM"
+  const [customFrom, setCustomFrom]         = useState<string>(""); // "YYYY-MM-DD"
+  const [customTo, setCustomTo]             = useState<string>("");
+
   const currency = profitSettings?.currency ?? "SAR";
 
   // ── Settings ──
@@ -176,13 +206,69 @@ export default function ProfitTrackerPage() {
     return () => unsub();
   }, [user]);
 
-  // ── TOTALS ──
+  // ── MONTH OPTIONS (derived from actual case data, newest first) ──
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    profitCases.forEach(c => {
+      const d = getCaseDate(c);
+      if (d) set.add(monthKey(d));
+    });
+    return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
+  }, [profitCases]);
+
+  // Default selectedMonth to the most recent month once data loads
+  useEffect(() => {
+    if (!selectedMonth && monthOptions.length > 0) {
+      setSelectedMonth(monthOptions[0]);
+    }
+  }, [monthOptions, selectedMonth]);
+
+  // ── BASE CASES: apply the date filter before anything else derives from it ──
+  const baseCases = useMemo(() => {
+    if (dateFilterMode === "all") return profitCases;
+
+    if (dateFilterMode === "month" && selectedMonth) {
+      return profitCases.filter(c => {
+        const d = getCaseDate(c);
+        return d ? monthKey(d) === selectedMonth : false;
+      });
+    }
+
+    if (dateFilterMode === "range") {
+      const from = customFrom ? new Date(customFrom + "T00:00:00") : null;
+      const to   = customTo   ? new Date(customTo   + "T23:59:59") : null;
+      if (!from && !to) return profitCases;
+      return profitCases.filter(c => {
+        const d = getCaseDate(c);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
+
+    return profitCases;
+  }, [profitCases, dateFilterMode, selectedMonth, customFrom, customTo]);
+
+  const dateFilterLabel = useMemo(() => {
+    if (dateFilterMode === "all") return "All Time";
+    if (dateFilterMode === "month") return selectedMonth ? monthLabel(selectedMonth) : "Select a month";
+    if (dateFilterMode === "range") {
+      if (!customFrom && !customTo) return "Custom range";
+      const f = customFrom ? new Date(customFrom).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "…";
+      const t = customTo   ? new Date(customTo).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "…";
+      return `${f} – ${t}`;
+    }
+    return "All Time";
+  }, [dateFilterMode, selectedMonth, customFrom, customTo]);
+
+  // ── TOTALS (now derived from baseCases) ──
   const totals = useMemo(() => {
-    const full = profitCases.filter(c => c.profitStatus === "full");
-    const inProg = profitCases.filter(c => c.profitStatus === "in-progress");
-    const totalRevenue = profitCases.reduce((s, c) => s + c.revenue, 0);
-    const totalProfit  = profitCases.reduce((s, c) => s + c.profit,  0);
-    const totalCost    = profitCases.reduce((s, c) => s + c.cost,    0);
+    const full = baseCases.filter(c => c.profitStatus === "full");
+    const inProg = baseCases.filter(c => c.profitStatus === "in-progress");
+    const totalRevenue = baseCases.reduce((s, c) => s + c.revenue, 0);
+    const totalProfit  = baseCases.reduce((s, c) => s + c.profit,  0);
+    const totalCost    = baseCases.reduce((s, c) => s + c.cost,    0);
     return {
       totalRevenue, totalProfit, totalCost,
       margin: totalRevenue ? Math.round((totalProfit / totalRevenue) * 100) : 0,
@@ -190,20 +276,20 @@ export default function ProfitTrackerPage() {
       fullProfit:       full.reduce((s,c) => s + c.profit, 0),
       inProgressCases:  inProg.length,
       inProgressProfit: inProg.reduce((s,c) => s + c.profit, 0),
-      avgCase:          profitCases.length ? Math.round(totalProfit / profitCases.length) : 0,
+      avgCase:          baseCases.length ? Math.round(totalProfit / baseCases.length) : 0,
     };
-  }, [profitCases]);
+  }, [baseCases]);
 
   // ── THIS MONTH vs LAST MONTH ──
+  // Kept relative to real "now" regardless of the active date filter, since
+  // it's a fixed comparison point rather than a filtered view.
   const monthComparison = useMemo(() => {
     const now = new Date();
     const thisMonth = now.getMonth();
     const thisYear  = now.getFullYear();
     let thisProfit = 0, lastProfit = 0;
     profitCases.forEach(c => {
-      const ts = c.completedAt?.seconds
-        ? new Date(c.completedAt.seconds * 1000)
-        : c.completedAt ? new Date(c.completedAt) : null;
+      const ts = getCaseDate(c);
       if (!ts) return;
       if (ts.getMonth() === thisMonth && ts.getFullYear() === thisYear) thisProfit += c.profit;
       const lm = thisMonth === 0 ? 11 : thisMonth - 1;
@@ -214,13 +300,13 @@ export default function ProfitTrackerPage() {
     return { thisProfit, lastProfit, change };
   }, [profitCases]);
 
-  // ── PROCEDURE STATS ──
+  // ── PROCEDURE STATS (derived from baseCases) ──
   const procedureStats = useMemo((): ProcedureStat[] => {
     const map: Record<string, ProcedureStat> = {};
     PROCEDURE_GROUPS.forEach(g => {
       map[g.key] = { name: g.label, key: g.key, count: 0, revenue: 0, cost: 0, profit: 0, margin: 0, color: g.color };
     });
-    profitCases.forEach(c => {
+    baseCases.forEach(c => {
       const g = getProcedureGroup(c.actualProcedure);
       map[g.key].count++;
       map[g.key].revenue += c.revenue;
@@ -231,51 +317,72 @@ export default function ProfitTrackerPage() {
       .map(s => ({ ...s, margin: s.revenue ? Math.round((s.profit / s.revenue) * 100) : 0 }))
       .filter(s => s.count > 0)
       .sort((a, b) => b.profit - a.profit);
-  }, [profitCases]);
+  }, [baseCases]);
 
-  // ── TREND CHART (weekly, last 8 weeks) ──
+  // ── TREND CHART ──
+  // In "All Time" mode: last 8 calendar weeks (unchanged behavior).
+  // In "month" mode: weekly buckets within the selected month.
+  // In "range" mode: weekly buckets spanning the selected range.
   const weeklyData = useMemo(() => {
-    const weeks = Array.from({ length: 8 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (7 * (7 - i)));
+    let rangeStart: Date, rangeEnd: Date;
+
+    if (dateFilterMode === "month" && selectedMonth) {
+      const [y, m] = selectedMonth.split("-").map(Number);
+      rangeStart = new Date(y, m - 1, 1);
+      rangeEnd   = new Date(y, m, 0, 23, 59, 59);
+    } else if (dateFilterMode === "range" && (customFrom || customTo)) {
+      rangeStart = customFrom ? new Date(customFrom + "T00:00:00") : new Date(0);
+      rangeEnd   = customTo   ? new Date(customTo + "T23:59:59")   : new Date();
+    } else {
+      rangeEnd   = new Date();
+      rangeStart = new Date();
+      rangeStart.setDate(rangeStart.getDate() - 7 * 8);
+    }
+
+    const totalMs = rangeEnd.getTime() - rangeStart.getTime();
+    const bucketCount = 8;
+    const bucketMs = Math.max(totalMs / bucketCount, 1);
+
+    const buckets = Array.from({ length: bucketCount }, (_, i) => {
+      const start = new Date(rangeStart.getTime() + i * bucketMs);
+      const end   = new Date(rangeStart.getTime() + (i + 1) * bucketMs);
       return {
         week: "W" + (i + 1),
-        label: d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+        label: start.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
         profit: 0, revenue: 0,
-        start: new Date(d), end: new Date(d.setDate(d.getDate() + 7)),
+        start, end,
       };
     });
-    profitCases.forEach(c => {
-      const ts = c.completedAt?.seconds
-        ? new Date(c.completedAt.seconds * 1000)
-        : c.completedAt ? new Date(c.completedAt)
-        : c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000) : null;
+
+    baseCases.forEach(c => {
+      const ts = getCaseDate(c);
       if (!ts) return;
-      const w = weeks.find(w => ts >= w.start && ts < w.end);
-      if (w) { w.profit += c.profit; w.revenue += c.revenue; }
+      const b = buckets.find(b => ts >= b.start && ts < b.end) ?? (ts >= rangeEnd ? buckets[buckets.length - 1] : null);
+      if (b) { b.profit += c.profit; b.revenue += c.revenue; }
     });
-    return weeks;
-  }, [profitCases]);
 
-  // ── TOP 3 CASES ──
+    return buckets;
+  }, [baseCases, dateFilterMode, selectedMonth, customFrom, customTo]);
+
+  // ── TOP 3 CASES (derived from baseCases) ──
   const topCases = useMemo(() =>
-    [...profitCases].sort((a, b) => b.profit - a.profit).slice(0, 3),
-  [profitCases]);
+    [...baseCases].sort((a, b) => b.profit - a.profit).slice(0, 3),
+  [baseCases]);
 
-  // ── FILTERED + SORTED CASE LIST ──
+  // ── FILTERED + SORTED CASE LIST (derived from baseCases) ──
   const filteredCases = useMemo(() => {
-    let list = filterProc === "all" ? profitCases
-      : profitCases.filter(c => getProcedureGroup(c.actualProcedure).key === filterProc);
+    let list = filterProc === "all" ? baseCases
+      : baseCases.filter(c => getProcedureGroup(c.actualProcedure).key === filterProc);
     return [...list].sort((a, b) =>
       sortBy === "profit"  ? b.profit - a.profit :
       sortBy === "revenue" ? b.revenue - a.revenue :
       (b.completedAt?.seconds || 0) - (a.completedAt?.seconds || 0)
     );
-  }, [profitCases, filterProc, sortBy]);
+  }, [baseCases, filterProc, sortBy]);
 
   // ── PDF EXPORT ──
   const exportToPDF = async () => {
-    if (profitCases.length === 0) { alert("No cases to export yet."); return; }
+    if (baseCases.length === 0) { alert("No cases to export yet."); return; }
     setIsExporting(true);
     try {
       const html2pdfModule = await import("html2pdf.js");
@@ -304,7 +411,7 @@ export default function ProfitTrackerPage() {
         <div style="font-family:system-ui,sans-serif;color:#e2e8f0;background:#0a1428;padding:40px;line-height:1.6;">
           <div style="text-align:center;margin-bottom:32px;">
             <h1 style="color:#10b981;font-size:28px;margin:0;">Profit Tracker Report</h1>
-            <p style="color:#64748b;font-size:13px;margin-top:6px;">Generated: ${new Date().toLocaleDateString("en-GB")}</p>
+            <p style="color:#64748b;font-size:13px;margin-top:6px;">Period: ${dateFilterLabel} · Generated: ${new Date().toLocaleDateString("en-GB")}</p>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">
             <div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:16px;text-align:center;">
@@ -321,7 +428,7 @@ export default function ProfitTrackerPage() {
             </div>
             <div style="background:#0d1a30;border:1px solid #1e3a5f;border-radius:12px;padding:16px;text-align:center;">
               <p style="color:#64748b;font-size:11px;text-transform:uppercase;margin:0 0 8px">Cases</p>
-              <p style="color:#e2e8f0;font-size:22px;font-weight:900;margin:0;">${profitCases.length}</p>
+              <p style="color:#e2e8f0;font-size:22px;font-weight:900;margin:0;">${baseCases.length}</p>
             </div>
           </div>
           <h2 style="color:#e2e8f0;font-size:16px;margin:0 0 12px;">By Procedure Type</h2>
@@ -373,6 +480,16 @@ export default function ProfitTrackerPage() {
     finally { setResetting(false); }
   };
 
+  // ── MONTH NAV HELPERS ──
+  const goToAdjacentMonth = (dir: -1 | 1) => {
+    if (!selectedMonth) return;
+    const idx = monthOptions.indexOf(selectedMonth);
+    const nextIdx = idx - dir; // monthOptions is newest-first, so -dir moves forward in time
+    if (nextIdx >= 0 && nextIdx < monthOptions.length) {
+      setSelectedMonth(monthOptions[nextIdx]);
+    }
+  };
+
   // ── LOADING ──
   if (loading) return (
     <ProtectedRoute><Navigation />
@@ -398,7 +515,7 @@ export default function ProfitTrackerPage() {
               <h1 className="text-3xl font-bold text-white" style={{ fontFamily: "Playfair Display, serif" }}>
                 Profit Tracker
               </h1>
-              <p className="text-gray-500 text-sm mt-1">Real-time · Done + In-Progress cases</p>
+              <p className="text-gray-500 text-sm mt-1">{dateFilterLabel} · Done + In-Progress cases</p>
             </div>
             <div className="flex items-center gap-3">
               <button onClick={exportToPDF} disabled={isExporting}
@@ -418,6 +535,93 @@ export default function ProfitTrackerPage() {
               </button>
             </div>
           </div>
+
+          {/* ── DATE FILTER BAR ── */}
+          {!showSetup && (
+            <div className="max-w-6xl mx-auto mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+              {/* Mode toggle */}
+              <div className="flex items-center bg-[#0a1428] border border-white/10 rounded-xl p-1 gap-1">
+                {([
+                  { mode: "all" as DateFilterMode, label: "All Time" },
+                  { mode: "month" as DateFilterMode, label: "By Month" },
+                  { mode: "range" as DateFilterMode, label: "Custom Range" },
+                ]).map(opt => (
+                  <button
+                    key={opt.mode}
+                    onClick={() => setDateFilterMode(opt.mode)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      dateFilterMode === opt.mode
+                        ? "bg-[#10b981]/20 text-[#10b981]"
+                        : "text-gray-500 hover:text-gray-300"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Month picker + arrows */}
+              {dateFilterMode === "month" && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => goToAdjacentMonth(-1)}
+                    disabled={monthOptions.indexOf(selectedMonth) >= monthOptions.length - 1}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    aria-label="Previous month"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 2.5L3.5 6l4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+
+                  <select
+                    value={selectedMonth}
+                    onChange={e => setSelectedMonth(e.target.value)}
+                    className="bg-[#0a1428] border border-white/10 text-white text-sm font-semibold rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#10b981]/50 min-w-40"
+                  >
+                    {monthOptions.length === 0 && <option value="">No data yet</option>}
+                    {monthOptions.map(key => (
+                      <option key={key} value={key}>{monthLabel(key)}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => goToAdjacentMonth(1)}
+                    disabled={monthOptions.indexOf(selectedMonth) <= 0}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    aria-label="Next month"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4.5 2.5l4 3.5-4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                </div>
+              )}
+
+              {/* Custom range inputs */}
+              {dateFilterMode === "range" && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={e => setCustomFrom(e.target.value)}
+                    className="bg-[#0a1428] border border-white/10 text-gray-200 text-sm rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#10b981]/50"
+                  />
+                  <span className="text-gray-600 text-xs">to</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={e => setCustomTo(e.target.value)}
+                    className="bg-[#0a1428] border border-white/10 text-gray-200 text-sm rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#10b981]/50"
+                  />
+                  {(customFrom || customTo) && (
+                    <button
+                      onClick={() => { setCustomFrom(""); setCustomTo(""); }}
+                      className="text-xs text-gray-500 hover:text-gray-300 px-2"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
@@ -484,7 +688,7 @@ export default function ProfitTrackerPage() {
               </div>
 
               {/* ── PROCEDURE BREAKDOWN ── */}
-              {procedureStats.length > 0 && (
+              {procedureStats.length > 0 ? (
                 <div className="bg-[#0d1a30] border border-white/8 rounded-2xl p-6">
                   <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold mb-5">
                     By Procedure Type
@@ -521,7 +725,7 @@ export default function ProfitTrackerPage() {
                           <tr key={i} className="border-b border-white/5 hover:bg-white/3 transition-colors">
                             <td className="py-3 pr-3">
                               <div className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
                                 <span className="text-white text-xs font-medium">{s.name}</span>
                               </div>
                             </td>
@@ -542,12 +746,16 @@ export default function ProfitTrackerPage() {
                     </table>
                   </div>
                 </div>
+              ) : (
+                <div className="bg-[#0d1a30] border border-white/8 rounded-2xl p-10 text-center text-gray-600 text-sm">
+                  No cases in this period
+                </div>
               )}
 
-              {/* ── WEEKLY TREND ── */}
+              {/* ── TREND ── */}
               <div className="bg-[#0d1a30] border border-white/8 rounded-2xl p-6">
                 <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold mb-5">
-                  8-Week Profit Trend
+                  Profit Trend {dateFilterMode !== "all" ? `· ${dateFilterLabel}` : "· Last 8 Weeks"}
                 </p>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
@@ -583,7 +791,7 @@ export default function ProfitTrackerPage() {
                             #{i + 1}
                           </div>
                           <div className="flex items-center gap-2 mb-3">
-                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: g.color }} />
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.color }} />
                             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: g.color }}>{g.label}</p>
                           </div>
                           <p className="font-semibold text-white text-sm truncate">{c.caseName}</p>
@@ -605,7 +813,7 @@ export default function ProfitTrackerPage() {
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <p className="text-[10px] text-[#10b981]/60 tracking-[2px] uppercase font-semibold">
-                    All Cases ({filteredCases.length})
+                    Cases ({filteredCases.length})
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Procedure filter */}
@@ -652,7 +860,7 @@ export default function ProfitTrackerPage() {
                                 <td className="px-4 py-3 text-xs text-gray-400">#{c.toothNumber}</td>
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: g.color }} />
+                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: g.color }} />
                                     <span className="text-xs text-gray-300">{getProcedureDisplayName(c.actualProcedure)}</span>
                                   </div>
                                 </td>
