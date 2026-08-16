@@ -26,6 +26,21 @@ interface WallStates { mesial: WallState; distal: WallState; buccal: WallState; 
 interface ProbingSite { id: string; label: string; short: string; cx: number; cy: number; level: PocketLevel; }
 
 // ════════════════════════════════════════════════════════════
+// UNIQUE REPORT ID
+// Each generated report gets its own id. The result page uses this
+// (and only this) to detect a genuine double-save of the SAME report.
+// crypto.randomUUID needs a secure context, so a fallback is included.
+// ════════════════════════════════════════════════════════════
+function makeResultId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch { /* fall through */ }
+  return `res_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// ════════════════════════════════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════════════════════════════════
 const WALL_WEIGHTS: Record<WallKey, number> = { mesial: 22, distal: 22, buccal: 23, lingual: 23 };
@@ -502,7 +517,7 @@ function UnifiedDiagram({ walls, occlusal, sites, remainingPercent, restorationS
     <div className="bg-[#0a1428] border border-white/10 rounded-3xl p-6 md:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-base font-semibold text-white">Coronal Structure & Periodontal Probing</h3>
+          <h3 className="text-base font-semibold text-white">Coronal Structure &amp; Periodontal Probing</h3>
           <p className="text-xs text-gray-500 mt-0.5">{wallsHidden?"Crown removal required before wall assessment":"Click walls to cycle state · Click probing dots to cycle depth"}</p>
         </div>
         {!wallsHidden&&<div className="text-right"><p className="text-3xl font-bold text-[#10b981]">{remainingPercent}%</p><p className="text-[10px] text-gray-500 uppercase tracking-wider">remaining</p></div>}
@@ -542,8 +557,8 @@ function UnifiedDiagram({ walls, occlusal, sites, remainingPercent, restorationS
                   <circle cx="160" cy="150" r="28" fill={occlusal==="access_only"?"#0a1428":occlusal==="moderate"?"#92400e":"#7f1d1d"} opacity="0.85"/>
                   <text x="160" y="45"  textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9">BUCCAL</text>
                   <text x="160" y="263" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9">LINGUAL</text>
-                  <text x="41"  cy="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9" transform="rotate(-90 41 154)">MESIAL</text>
-                  <text x="279" cy="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9" transform="rotate(90 279 154)">DISTAL</text>
+                  <text x="41"  y="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9" transform="rotate(-90 41 154)">MESIAL</text>
+                  <text x="279" y="154" textAnchor="middle" fontSize="9" fill="white" fontWeight="700" opacity="0.9" transform="rotate(90 279 154)">DISTAL</text>
                   <text x="160" y="145" textAnchor="middle" fontSize="8" fill="white" opacity="0.75">ACCESS</text>
                   <text x="160" y="157" textAnchor="middle" fontSize="8" fill="white" opacity="0.75">CAVITY</text>
                   <text x="160" y="200" textAnchor="middle" fontSize="13" fill="#10b981" fontWeight="800">{remainingPercent}%</text>
@@ -646,7 +661,7 @@ function CrackSection({ formData, onChange }: { formData: any; onChange: (n:stri
         <>
           <div className={`rounded-2xl border-2 p-5 mb-5 ${cc?"bg-emerald-500/8 border-emerald-500/40":"bg-white/3 border-white/15"}`}>
             <p className={`text-sm font-semibold mb-1 ${cc?"text-emerald-400":"text-gray-300"}`}>Crack Confirmation — Required for Iowa Classification</p>
-            <p className="text-xs text-gray-500 mb-4 leading-relaxed">Per Krell & Caplan: no tooth staged without confirmed crack visualization.</p>
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">Per Krell &amp; Caplan: no tooth staged without confirmed crack visualization.</p>
             <div className="grid md:grid-cols-3 gap-4">
               {[{f:"crackTransillum",i:"💡",t:"Transillumination",d:"Definite shadow blocking light"},{f:"crackMethBlue",i:"🔵",t:"Methylene Blue",d:"Visible dye uptake along crack"},{f:"crackDirect",i:"🔬",t:"Direct Visualization",d:"Crack confirmed under magnification"}].map(m=>{
                 const c2=formData[m.f]==="yes";
@@ -840,6 +855,13 @@ export default function EndoDecide() {
       let vptAgeNote=""; if(treatmentRec==="Vital Pulp Therapy"){if(["1-12 years","13-25 years"].includes(formData.ageGroup))vptAgeNote="Favorable age for vital pulp therapy — enhanced healing expected."; else if(formData.ageGroup==="Over 40 years")vptAgeNote="Pulp vascularity may be reduced — assess carefully before VPT.";}
       let medicationFlag=""; if(parseInt(formData.medications)>=2&&parseInt(formData.prostho)>=1)medicationFlag="Patient on medications requiring modification — consider MRONJ risk if surgical procedures planned.";
       const resultData={
+        // ── Unique id for THIS generated report ──
+        // The result page uses this to detect a real double-save.
+        // Two different patients can share tooth number, diagnosis and
+        // survival score, so those fields must never be used for that.
+        resultId:makeResultId(),
+        generatedAt:new Date().toISOString(),
+
         toolType:crackConfirmed?"combined":"predictor",urgency,toothNumber:formData.toothNumber,toothType,gender:formData.gender,ageGroup:formData.ageGroup,
         pulpalDiagnosis:pulpalDx,periapicalDiagnosis:periDx,inconsistencyNotes:inconsistencies,
         survivalPercentage:prog.survival,survivalRange:prog.survivalRange,isPractical:prog.isPractical,totalDPI:prog.totalDPI,threshold:prog.threshold,
@@ -872,7 +894,7 @@ export default function EndoDecide() {
           <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-6 pt-8">
             <p className="text-[11px] tracking-[4px] mb-3" style={{color:urgCfg.accent+"99"}}>CLINICAL DECISION TOOL</p>
             <h1 className="text-4xl md:text-5xl font-bold mb-3" style={{fontFamily:"Playfair Display, serif",background:`linear-gradient(135deg, ${urgCfg.accent}, white, ${urgCfg.accent})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>EndoDecide</h1>
-            <p className="text-gray-300 text-base md:text-lg">Unified Endodontic Prognosis & Crack Classification</p>
+            <p className="text-gray-300 text-base md:text-lg">Unified Endodontic Prognosis &amp; Crack Classification</p>
             <div className="flex items-center gap-6 mt-5">
               <div className="text-center"><p className="text-2xl font-bold" style={{color:urgCfg.accent}}>92%</p><p className="text-[10px] text-gray-500 uppercase tracking-wider">Best case baseline</p></div>
               <div className="w-px h-10 bg-white/20"/>
@@ -1043,7 +1065,7 @@ export default function EndoDecide() {
             {loading?(<span className="flex items-center justify-center gap-2"><svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.2"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg><span className="text-white">Generating EndoDecide Report...</span></span>):isCalculationBlocked?"⚠ Remove crown before generating report":"Generate EndoDecide Report →"}
           </button>
 
-          <p className="text-center text-xs text-gray-600 leading-relaxed">AAE 2013 terminology · Iowa Classification (Krell & Caplan 2018) · Tier 4: Zgur-Er et al. 2025 · Clinical decision support only</p>
+          <p className="text-center text-xs text-gray-600 leading-relaxed">AAE 2013 terminology · Iowa Classification (Krell &amp; Caplan 2018) · Tier 4: Zgur-Er et al. 2025 · Clinical decision support only</p>
         </div>
         <footer className="text-center py-8 text-xs text-gray-600 border-t border-white/8">© 2026 Endoprognosis. All rights reserved.</footer>
       </div>

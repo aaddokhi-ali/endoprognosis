@@ -476,6 +476,14 @@ export default function EndoDecideResult() {
 
   // ════════════════════════════════════════════════════════════
   // SAVE CASE
+  //
+  // Duplicate detection keys ONLY on result.resultId — the unique id
+  // stamped on the report when it was generated.
+  //
+  // It must NOT key on toothNumber / diagnosis / survival: two different
+  // patients routinely share the same tooth, the same AAE diagnosis pair
+  // and the same survival integer (the score is clamped to 35–92), so
+  // matching on those fields flags genuine new cases as duplicates.
   // ════════════════════════════════════════════════════════════
   const handleSaveCase = async () => {
     if (isSavingRef.current) return;
@@ -497,35 +505,29 @@ export default function EndoDecideResult() {
       return;
     }
     setSaving(true);
-    let saved = false;
 
     try {
-      const q = query(
-        collection(db, "cases"),
-        where("userId",      "==", user.uid),
-        where("toothNumber", "==", result.toothNumber),
-        where("type",        "==", "endodecide")
-      );
-      const snap = await getDocs(q);
-      let isDuplicate = false;
-      if (!snap.empty) {
-        for (const d of snap.docs) {
-          const ex = d.data();
-          if (
-            ex.survivalEstimate    === survival &&
-            ex.pulpalDiagnosis     === result.pulpalDiagnosis &&
-            ex.periapicalDiagnosis === result.periapicalDiagnosis
-          ) { isDuplicate = true; break; }
+      // Only run the check when this report actually carries an id.
+      // Reports generated before this change have none — saving them
+      // must not be blocked, and they must not all collide on null.
+      if (result.resultId) {
+        const q = query(
+          collection(db, "cases"),
+          where("userId",   "==", user.uid),
+          where("resultId", "==", result.resultId)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          alert("This exact report has already been saved. Check My Cases.");
+          return;
         }
-      }
-      if (isDuplicate) {
-        alert("This case was already saved. Check My Cases.");
-        return;
       }
 
       await addDoc(collection(db, "cases"), {
         type:         "endodecide",
         toolType:     result.toolType ?? "predictor",
+        resultId:     result.resultId   ?? null,
+        generatedAt:  result.generatedAt ?? null,
         caseName:     caseName.trim(),
         phoneNumber:  phoneNumber.trim(),
         followUpDate: followUpDate || null,
@@ -612,18 +614,22 @@ export default function EndoDecideResult() {
         savedAt:   new Date().toISOString(),
       });
 
-      saved = true;
       setSaveSuccess(true);
       setShowSaveModal(false);
       setCaseName(""); setPhoneNumber(""); setFollowUpDate(""); setFurtherNote("");
 
-    } catch (err) {
+      // The report deliberately stays in localStorage. Clearing it here
+      // would bounce the user back to /endodecide on any refresh or
+      // back-navigation after saving. resultId already prevents a
+      // duplicate write, so the report can safely remain readable.
+
+    } catch (err: any) {
       console.error("Save failed:", err);
-      alert("Failed to save case. Please try again.");
+      const code = err?.code ? ` (${err.code})` : "";
+      alert(`Failed to save case${code}. Please try again — see the browser console for details.`);
     } finally {
       setSaving(false);
       isSavingRef.current = false;
-      if (saved) { try { localStorage.removeItem("lastEndoDecideResult"); } catch {} }
     }
   };
 
@@ -667,7 +673,7 @@ export default function EndoDecideResult() {
 
       const iowaBlock = iowa ? `
         <div style="background:${iowaCfg?.bg.replace("bg-","").replace("/10","") ?? "#0d1a30"};border:2px solid ${iowa.stage === "I" ? "#10b981" : iowa.stage === "II" ? "#f59e0b" : iowa.stage === "III" ? "#f97316" : "#ef4444"};border-radius:12px;padding:20px;margin-bottom:16px;">
-          <p style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Iowa Classification — Krell & Caplan 2018</p>
+          <p style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Iowa Classification — Krell &amp; Caplan 2018</p>
           <p style="font-size:28px;font-weight:900;color:${iowa.stage === "I" ? "#10b981" : iowa.stage === "II" ? "#f59e0b" : iowa.stage === "III" ? "#f97316" : "#ef4444"};margin:0;">Stage ${iowa.stage}</p>
           <p style="color:#94a3b8;font-size:13px;margin-top:6px;">${iowa.label}</p>
           <p style="color:#94a3b8;font-size:13px;margin-top:4px;">1-year success rate: <strong>${iowa.successRate}%</strong> — reported independently of EPP survival estimate</p>
@@ -838,7 +844,7 @@ export default function EndoDecideResult() {
                     <path d="M8 2L14 13H2L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
                     <path d="M8 7v3M8 11.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                   </svg>
-                  Combined — Prognosis & Iowa
+                  Combined — Prognosis &amp; Iowa
                 </div>
               )}
               {isRetreatmentCase && (
@@ -1087,7 +1093,7 @@ export default function EndoDecideResult() {
                 </div>
               )}
               <p className="text-[10px] text-gray-600 mt-4 leading-relaxed">
-                1-year success rates for orthograde root canal treatment — Krell & Caplan, J Endod 2018 (n=363 cracked teeth).
+                1-year success rates for orthograde root canal treatment — Krell &amp; Caplan, J Endod 2018 (n=363 cracked teeth).
               </p>
             </Panel>
           )}
@@ -1190,7 +1196,7 @@ export default function EndoDecideResult() {
 
               {/* Evidence footnote */}
               <p className="text-[10px] text-gray-600 mt-3 leading-relaxed">
-                Wall count thresholds: Arunpraditkul & Juntavee 2009 · Juloski et al. 2012 · Systematic review: Cureus 2025.
+                Wall count thresholds: Arunpraditkul &amp; Juntavee 2009 · Juloski et al. 2012 · Systematic review: Cureus 2025.
               </p>
             </Panel>
           )}
@@ -1298,7 +1304,7 @@ export default function EndoDecideResult() {
 
           <p className="text-center text-xs text-gray-600 leading-relaxed">
             ⚠️ Clinical decision support only. Always apply professional judgment.<br />
-            AAE 2013 terminology · Iowa Classification (Krell & Caplan 2018)
+            AAE 2013 terminology · Iowa Classification (Krell &amp; Caplan 2018)
           </p>
         </div>
 
