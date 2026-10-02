@@ -53,6 +53,17 @@ interface SavedCase {
   createdAt: any;
 }
 
+interface Radiograph {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  uploadedAt: any;
+  storagePath?: string;
+  fileSize?: number;
+  mimeType?: string;
+}
+
 interface ProfitSettings {
   currency: "SAR" | "USD";
   procedures: Record<string, { revenue: number; cost: number }>;
@@ -217,6 +228,124 @@ function formatDate(d: string | null | undefined): string {
   if (!d) return "";
   try { return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); }
   catch { return d; }
+}
+
+// ════════════════════════════════════════════════════════════
+// RADIOGRAPH GALLERY
+// ════════════════════════════════════════════════════════════
+function RadiographGallery({ caseId, userId }: { caseId: string; userId: string }) {
+  const [radiographs, setRadiographs] = useState<Radiograph[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<Radiograph | null>(null);
+
+  useEffect(() => {
+    const fetchRadiographs = async () => {
+      try {
+        const rad = await getDocs(
+          collection(db, "cases", caseId, "radiographs")
+        );
+        const data = rad.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        } as Radiograph));
+        setRadiographs(data);
+      } catch (err) {
+        console.error("Failed to fetch radiographs:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (caseId) {
+      fetchRadiographs();
+    }
+  }, [caseId]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-20 bg-white/4 rounded-lg animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (radiographs.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <svg width="32" height="32" viewBox="0 0 48 48" fill="none" className="mx-auto mb-2 opacity-30">
+          <rect x="4" y="6" width="40" height="32" rx="2" stroke="currentColor" strokeWidth="2"/>
+          <circle cx="14" cy="16" r="3" stroke="currentColor" strokeWidth="2"/>
+          <path d="M4 30l12-10 8 8 20-20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <p className="text-xs text-gray-600">No radiographs uploaded</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {radiographs.map(rad => (
+          <button
+            key={rad.id}
+            onClick={() => setSelectedImage(rad)}
+            className="relative group rounded-lg overflow-hidden bg-black/40 aspect-square border border-white/8 hover:border-[#10b981]/50 transition-all"
+          >
+            <img
+              src={rad.url}
+              alt={rad.name}
+              className="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-white">
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0Z" stroke="currentColor" strokeWidth="2"/>
+                <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7S3.732 16.057 2.458 12Z" stroke="currentColor" strokeWidth="2"/>
+              </svg>
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 px-2 py-1">
+              <p className="text-[9px] text-white font-bold truncate">{rad.type.toUpperCase()}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Lightbox Modal */}
+      {selectedImage && (
+        <div
+          onClick={() => setSelectedImage(null)}
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 flex-col"
+        >
+          <button
+            onClick={e => { e.stopPropagation(); setSelectedImage(null); }}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
+
+          <div
+            onClick={e => e.stopPropagation()}
+            className="flex flex-col items-center max-w-2xl w-full"
+          >
+            <img
+              src={selectedImage.url}
+              alt={selectedImage.name}
+              className="max-w-full max-h-[70vh] rounded-lg object-contain"
+            />
+            <div className="mt-4 text-center">
+              <p className="text-sm font-semibold text-white">{selectedImage.name}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {selectedImage.type.toUpperCase()} · {selectedImage.uploadedAt?.toDate?.().toLocaleDateString?.("en-GB") || ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ════════════════════════════════════════════════════════════
@@ -486,7 +615,6 @@ function ProcedureStatRow({ cases }: { cases: SavedCase[] }) {
 export default function MyCases() {
   const [cases, setCases]             = useState<SavedCase[]>([]);
   const [allCases, setAllCases]       = useState<SavedCase[]>([]);
-  const [monthCases, setMonthCases]   = useState<SavedCase[]>([]); // All cases for selected month
   const [lastDoc, setLastDoc]         = useState<any>(null);
   const [hasMore, setHasMore]         = useState(true);
   const [totalCount, setTotalCount]   = useState<number | null>(null);
@@ -615,49 +743,15 @@ export default function MyCases() {
     fetchCount();
   }, [user]);
 
-  // Load ALL cases for selected month (for accurate stats)
-  useEffect(() => {
-    if (!user) return;
-    const loadMonthCases = async () => {
-      try {
-        const { start, end } = getMonthRange(selectedMonth, selectedYear);
-        const q = query(
-          collection(db, "cases"),
-          where("userId", "==", user.uid),
-          where("createdAt", ">=", start),
-          where("createdAt", "<=", end),
-          orderBy("createdAt", "desc")
-          // NO limit() — fetch ALL cases for this month
-        );
-        const snapshot = await getDocs(q);
-        const allMonthCases: SavedCase[] = snapshot.docs.map(d => {
-          const data = d.data() as Omit<SavedCase, "id">;
-          return {
-            id: d.id, ...data,
-            treatmentStatus:  (data.treatmentStatus ?? "No Treatment") as TreatmentStatus,
-            followUpDate:     data.followUpDate ?? null,
-            affectingFactors: data.affectingFactors ?? [],
-          } as SavedCase;
-        });
-        setMonthCases(allMonthCases);
-      } catch (err) {
-        console.error("Failed to load month cases:", err);
-      }
-    };
-    loadMonthCases();
-  }, [selectedMonth, selectedYear, user]);
-
   // Optimistic handlers
   const handleStatusUpdated = useCallback((id: string, next: TreatmentStatus) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
     setAllCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
-    setMonthCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
   }, []);
 
   const handleDeleted = useCallback((id: string) => {
     setCases(prev => prev.filter(c => c.id !== id));
     setAllCases(prev => prev.filter(c => c.id !== id));
-    setMonthCases(prev => prev.filter(c => c.id !== id));
     setTotalCount(prev => prev !== null ? prev - 1 : null);
     setExpandedId(prev => prev === id ? null : prev);
   }, []);
@@ -665,16 +759,13 @@ export default function MyCases() {
   const handleFieldUpdated = useCallback((id: string, fields: Partial<SavedCase>) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
     setAllCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
-    setMonthCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
   }, []);
 
   // Filter by date range
   const monthRange = getMonthRange(selectedMonth, selectedYear);
-  // Use monthCases (all cases for selected month) for accurate stats
-  // When searching, fall back to allCases; otherwise use monthCases
-  const casesInRange = debouncedSearch 
-    ? allCases.filter(c => c.createdAt && c.createdAt >= monthRange.start && c.createdAt <= monthRange.end)
-    : monthCases;
+  const casesInRange = (debouncedSearch ? allCases : cases).filter(c =>
+    c.createdAt && c.createdAt >= monthRange.start && c.createdAt <= monthRange.end
+  );
 
   // Tab counts
   const tabCounts = useMemo(() => ({
@@ -1158,6 +1249,14 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Radiographs */}
+          {endo && (
+            <div className="px-4 py-4 border-b border-white/6">
+              <p className="text-[9px] uppercase tracking-[3px] text-[#10b981]/50 font-semibold mb-3">Radiographs</p>
+              <RadiographGallery caseId={c.id} userId={userId} />
             </div>
           )}
 

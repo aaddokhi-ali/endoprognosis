@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { useAuth } from "../../context/AuthContext";
 import Navigation from "../../components/navigation";
@@ -17,6 +17,17 @@ import {
 // ════════════════════════════════════════════════════════════
 // TYPES
 // ════════════════════════════════════════════════════════════
+interface Radiograph {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  uploadedAt: any;
+  storagePath?: string;
+  fileSize?: number;
+  mimeType?: string;
+}
+
 interface CaseData {
   id: string;
   caseName: string;
@@ -110,6 +121,124 @@ function survivalColor(v?: number): string {
   if (v >= 80) return "text-emerald-400";
   if (v >= 65) return "text-amber-400";
   return "text-red-400";
+}
+
+// ════════════════════════════════════════════════════════════
+// RADIOGRAPH GALLERY
+// ════════════════════════════════════════════════════════════
+function RadiographGallery({ caseId, userId }: { caseId: string; userId: string }) {
+  const [radiographs, setRadiographs] = useState<Radiograph[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<Radiograph | null>(null);
+
+  useEffect(() => {
+    const fetchRadiographs = async () => {
+      try {
+        const rad = await getDocs(
+          collection(db, "cases", caseId, "radiographs")
+        );
+        const data = rad.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        } as Radiograph));
+        setRadiographs(data);
+      } catch (err) {
+        console.error("Failed to fetch radiographs:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (caseId) {
+      fetchRadiographs();
+    }
+  }, [caseId]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="h-20 bg-white/4 rounded-lg animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (radiographs.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <svg width="32" height="32" viewBox="0 0 48 48" fill="none" className="mx-auto mb-2 opacity-30">
+          <rect x="4" y="6" width="40" height="32" rx="2" stroke="currentColor" strokeWidth="2"/>
+          <circle cx="14" cy="16" r="3" stroke="currentColor" strokeWidth="2"/>
+          <path d="M4 30l12-10 8 8 20-20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <p className="text-xs text-gray-600">No radiographs uploaded</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {radiographs.map(rad => (
+          <button
+            key={rad.id}
+            onClick={() => setSelectedImage(rad)}
+            className="relative group rounded-lg overflow-hidden bg-black/40 aspect-square border border-white/8 hover:border-[#10b981]/50 transition-all"
+          >
+            <img
+              src={rad.url}
+              alt={rad.name}
+              className="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-white">
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0Z" stroke="currentColor" strokeWidth="2"/>
+                <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7S3.732 16.057 2.458 12Z" stroke="currentColor" strokeWidth="2"/>
+              </svg>
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 px-2 py-1">
+              <p className="text-[9px] text-white font-bold truncate">{rad.type.toUpperCase()}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Lightbox Modal */}
+      {selectedImage && (
+        <div
+          onClick={() => setSelectedImage(null)}
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 flex-col"
+        >
+          <button
+            onClick={e => { e.stopPropagation(); setSelectedImage(null); }}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
+
+          <div
+            onClick={e => e.stopPropagation()}
+            className="flex flex-col items-center max-w-2xl w-full"
+          >
+            <img
+              src={selectedImage.url}
+              alt={selectedImage.name}
+              className="max-w-full max-h-[70vh] rounded-lg object-contain"
+            />
+            <div className="mt-4 text-center">
+              <p className="text-sm font-semibold text-white">{selectedImage.name}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {selectedImage.type.toUpperCase()} · {selectedImage.uploadedAt?.toDate?.().toLocaleDateString?.("en-GB") || ""}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ════════════════════════════════════════════════════════════
@@ -421,7 +550,7 @@ export default function CaseDetailPage() {
                       state === "moderate" ? "bg-amber-500/10 border-amber-500/25" :
                                             "bg-red-500/10 border-red-500/25"
                     }`}>
-                      <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1 capitalize">{wall}</p>
+                      <p className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">{wall}</p>
                       <p className={`text-xs font-bold capitalize ${
                         state === "intact" ? "text-emerald-400" : state === "moderate" ? "text-amber-400" : "text-red-400"
                       }`}>{state}</p>
@@ -528,6 +657,13 @@ export default function CaseDetailPage() {
                   })}
                 </div>
               )}
+            </SectionCard>
+          )}
+
+          {/* ── RADIOGRAPHS (EndoDecide only) ── */}
+          {isEndo && (
+            <SectionCard title="Radiographs" accent="#10b981">
+              <RadiographGallery caseId={caseData.id} userId={user?.uid || ""} />
             </SectionCard>
           )}
 
