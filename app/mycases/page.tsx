@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   collection, query, where, orderBy,
   getDocs, doc, updateDoc, deleteDoc, startAfter, limit,
-  getCountFromServer, getDoc,
+  getCountFromServer, getDoc, Timestamp,
 } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { useAuth } from "../context/AuthContext";
@@ -59,6 +59,68 @@ interface ProfitSettings {
 }
 
 const PAGE_SIZE = 15;
+
+// ════════════════════════════════════════════════════════════
+// MONTH SELECTOR HELPERS
+// ════════════════════════════════════════════════════════════
+function getMonthRange(month: number, year: number): { start: Timestamp; end: Timestamp } {
+  const start = new Date(year, month, 1, 0, 0, 0, 0);
+  const end = new Date(year, month + 1, 0, 23, 59, 59, 999);
+  return {
+    start: Timestamp.fromDate(start),
+    end: Timestamp.fromDate(end),
+  };
+}
+
+function formatMonthYear(month: number, year: number): string {
+  return new Date(year, month, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+function getProcedureCategory(treatmentRec?: string): string {
+  if (!treatmentRec) return "Other";
+  const rec = treatmentRec.toLowerCase();
+  if (rec.includes("vital pulp")) return "VPT";
+  if (rec.includes("retreatment")) return "Retreatment";
+  if (rec.includes("root canal treatment")) return "RCT";
+  if (rec.includes("microsurgical") || rec.includes("apico")) return "Microsurgery";
+  return "Other";
+}
+
+// ════════════════════════════════════════════════════════════
+// XLSX EXPORT
+// ════════════════════════════════════════════════════════════
+async function exportToXLSX(cases: SavedCase[], monthYear: string) {
+  try {
+    const { utils, writeFile } = await import("xlsx");
+    
+    const data = cases.map(c => ({
+      "Case Name": c.caseName || "",
+      "Phone": c.phoneNumber || "",
+      "Tooth #": c.toothNumber || "",
+      "Pulpal Diagnosis": c.pulpalDiagnosis || "",
+      "Periapical Diagnosis": c.periapicalDiagnosis || "",
+      "Procedure Type": getProcedureCategory(c.treatmentRec),
+      "Treatment Status": c.treatmentStatus || "No Treatment",
+      "Survival %": c.survivalEstimate ?? "",
+      "Created": c.createdAt ? new Date(c.createdAt.toDate()).toLocaleDateString("en-GB") : "",
+      "Follow-up": c.followUpDate ? new Date(c.followUpDate).toLocaleDateString("en-GB") : "",
+    }));
+
+    const ws = utils.json_to_sheet(data);
+    ws["!cols"] = [
+      { wch: 16 }, { wch: 14 }, { wch: 8 }, { wch: 18 },
+      { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 10 },
+      { wch: 11 }, { wch: 11 },
+    ];
+
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, "Cases");
+    writeFile(wb, `MyCases_${monthYear}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (err) {
+    console.error("Export failed:", err);
+    alert("Failed to export to Excel. Please try again.");
+  }
+}
 
 // ════════════════════════════════════════════════════════════
 // CONFIG
@@ -160,26 +222,6 @@ function formatDate(d: string | null | undefined): string {
 // ════════════════════════════════════════════════════════════
 // SURVIVAL RING
 // ════════════════════════════════════════════════════════════
-function SurvivalRing({ value, size = 52 }: { value: number; size?: number }) {
-  const r = (size - 6) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (value / 100) * circ;
-  const color = survivalRingColor(value);
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-shrink-0 -rotate-90">
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1e293b" strokeWidth="5" />
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5"
-        strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
-        style={{ transition: "stroke-dasharray 0.5s ease" }}
-      />
-      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="rotate-90"
-        style={{ fill: color, fontSize: size * 0.24, fontWeight: 800, fontFamily: "system-ui", transform: `rotate(90deg) translate(0,0)` }}>
-      </text>
-    </svg>
-  );
-}
-
-// Inline SVG ring with centered label (uses foreignObject workaround via absolute positioning)
 function SurvivalCircle({ value }: { value?: number }) {
   const size = 56;
   const r = 22;
@@ -211,7 +253,7 @@ function SurvivalCircle({ value }: { value?: number }) {
 }
 
 // ════════════════════════════════════════════════════════════
-// STATUS PILL — clickable cycle
+// STATUS CYCLER
 // ════════════════════════════════════════════════════════════
 function StatusCycler({ caseId, current, treatmentRec, toothType, userId, onUpdated }: {
   caseId: string; current: TreatmentStatus; treatmentRec?: string;
@@ -228,11 +270,10 @@ function StatusCycler({ caseId, current, treatmentRec, toothType, userId, onUpda
     setBusy(true);
     try {
       await updateDoc(doc(db, "cases", caseId), { treatmentStatus: next });
-      // Fire profit update in background — don't await so UI is instant
       if (next === "Done" || next === "In-Progress") {
         applyProfitFields(userId, caseId, treatmentRec, toothType, next).catch(console.error);
       }
-      onUpdated(caseId, next); // ← instant optimistic update
+      onUpdated(caseId, next);
     } catch (err) {
       console.error("Status cycle failed:", err);
     } finally {
@@ -249,15 +290,12 @@ function StatusCycler({ caseId, current, treatmentRec, toothType, userId, onUpda
     >
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot} ${busy ? "animate-ping" : ""}`} />
       {busy ? "Saving…" : cfg.label}
-      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="opacity-40 group-hover:opacity-80 transition-opacity">
-        <path d="M5 1v8M1 5l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
     </button>
   );
 }
 
 // ════════════════════════════════════════════════════════════
-// STATUS SELECTOR (expanded panel — all 4 options visible)
+// STATUS SELECTOR
 // ════════════════════════════════════════════════════════════
 function StatusSelector({ caseId, current, treatmentRec, toothType, userId, onUpdated }: {
   caseId: string; current: TreatmentStatus; treatmentRec?: string;
@@ -317,7 +355,6 @@ function EditableField({ label, value, field, caseId, type = "text", options, on
   const inputRef = useRef<any>(null);
 
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
-  // Sync if parent value changes
   useEffect(() => { if (!editing) setDraft(value ?? ""); }, [value, editing]);
 
   const save = async () => {
@@ -403,10 +440,52 @@ function SkeletonCard() {
 }
 
 // ════════════════════════════════════════════════════════════
+// PROCEDURE STAT ROW
+// ════════════════════════════════════════════════════════════
+function ProcedureStatRow({ cases }: { cases: SavedCase[] }) {
+  const stats = useMemo(() => {
+    const counts = {
+      rct: 0,
+      retreat: 0,
+      microsurgery: 0,
+      vpt: 0,
+      other: 0,
+    };
+    cases.forEach(c => {
+      const cat = getProcedureCategory(c.treatmentRec);
+      if (cat === "RCT") counts.rct++;
+      else if (cat === "Retreatment") counts.retreat++;
+      else if (cat === "Microsurgery") counts.microsurgery++;
+      else if (cat === "VPT") counts.vpt++;
+      else counts.other++;
+    });
+    return counts;
+  }, [cases]);
+
+  return (
+    <div className="grid grid-cols-5 gap-2 mb-6">
+      {[
+        { label: "RCT", value: stats.rct, color: "#10b981" },
+        { label: "Retreatment", value: stats.retreat, color: "#f59e0b" },
+        { label: "Microsurgery", value: stats.microsurgery, color: "#f97316" },
+        { label: "VPT", value: stats.vpt, color: "#0ea5e9" },
+        { label: "Other", value: stats.other, color: "#6b7280" },
+      ].map(stat => (
+        <div key={stat.label} className="bg-[#0d1a30] border border-white/8 rounded-xl px-3 py-3 text-center">
+          <p className="text-2xl font-black" style={{ color: stat.color }}>{stat.value}</p>
+          <p className="text-[9px] text-gray-600 uppercase tracking-wider mt-1">{stat.label}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════
 export default function MyCases() {
   const [cases, setCases]             = useState<SavedCase[]>([]);
+  const [allCases, setAllCases]       = useState<SavedCase[]>([]);
   const [lastDoc, setLastDoc]         = useState<any>(null);
   const [hasMore, setHasMore]         = useState(true);
   const [totalCount, setTotalCount]   = useState<number | null>(null);
@@ -415,18 +494,26 @@ export default function MyCases() {
   const [error, setError]             = useState<string | null>(null);
   const [searchTerm, setSearchTerm]   = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab]     = useState<ActiveTab>("All");
   const [expandedId, setExpandedId]   = useState<string | null>(null);
+  
+  // Date range (month selector)
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
   const { user } = useAuth();
   const router   = useRouter();
   const hasFetched = useRef(false);
 
+  // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(t);
   }, [searchTerm]);
 
+  // Fetch count
   const fetchCount = useCallback(async () => {
     if (!user) return;
     try {
@@ -436,6 +523,7 @@ export default function MyCases() {
     } catch {}
   }, [user]);
 
+  // Load cases (initial + pagination)
   const loadCases = useCallback(async (loadMore = false) => {
     if (!user) return;
     if (loadMore) setLoadingMore(true);
@@ -470,6 +558,55 @@ export default function MyCases() {
     }
   }, [user, lastDoc]);
 
+  // Search all cases (full archive)
+  const searchAllCases = useCallback(async () => {
+    if (!user || !debouncedSearch.trim()) {
+      setAllCases([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const q = query(
+        collection(db, "cases"),
+        where("userId", "==", user.uid)
+      );
+      const snapshot = await getDocs(q);
+      const allData = snapshot.docs.map(d => {
+        const data = d.data() as Omit<SavedCase, "id">;
+        return {
+          id: d.id, ...data,
+          treatmentStatus:  (data.treatmentStatus ?? "No Treatment") as TreatmentStatus,
+          followUpDate:     data.followUpDate ?? null,
+          affectingFactors: data.affectingFactors ?? [],
+        } as SavedCase;
+      });
+
+      const term = debouncedSearch.toLowerCase().trim();
+      const filtered = allData.filter(c => [
+        c.caseName, c.phoneNumber, c.toothNumber, c.toothType,
+        c.pulpalDiagnosis, c.periapicalDiagnosis, c.treatmentRec,
+        c.gender, c.ageGroup, ...(c.affectingFactors || []),
+      ].join(" ").toLowerCase().includes(term));
+
+      setAllCases(filtered);
+    } catch (err) {
+      console.error("Search failed:", err);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [user, debouncedSearch]);
+
+  // Trigger search when debounced term changes
+  useEffect(() => {
+    if (debouncedSearch) {
+      searchAllCases();
+    } else {
+      setAllCases([]);
+    }
+  }, [debouncedSearch, searchAllCases]);
+
+  // Initial load
   useEffect(() => {
     if (!user || hasFetched.current) return;
     hasFetched.current = true;
@@ -477,49 +614,51 @@ export default function MyCases() {
     fetchCount();
   }, [user]);
 
-  // ── Optimistic handlers ──
+  // Optimistic handlers
   const handleStatusUpdated = useCallback((id: string, next: TreatmentStatus) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
+    setAllCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
   }, []);
 
   const handleDeleted = useCallback((id: string) => {
     setCases(prev => prev.filter(c => c.id !== id));
+    setAllCases(prev => prev.filter(c => c.id !== id));
     setTotalCount(prev => prev !== null ? prev - 1 : null);
     setExpandedId(prev => prev === id ? null : prev);
   }, []);
 
   const handleFieldUpdated = useCallback((id: string, fields: Partial<SavedCase>) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
+    setAllCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
   }, []);
 
-  // ── Tab counts ──
-  const tabCounts = useMemo(() => ({
-    "All":          cases.length,
-    "EndoDecide":   cases.filter(c => isEndoDecide(c)).length,
-    "Crack Cases":  cases.filter(c => isLegacyCrack(c)).length,
-    "No Treatment": cases.filter(c => c.treatmentStatus === "No Treatment" && !isLegacyCrack(c)).length,
-    "In-Progress":  cases.filter(c => c.treatmentStatus === "In-Progress").length,
-    "Done":         cases.filter(c => c.treatmentStatus === "Done").length,
-    "Postpone":     cases.filter(c => c.treatmentStatus === "Postpone").length,
-  }), [cases]);
+  // Filter by date range
+  const monthRange = getMonthRange(selectedMonth, selectedYear);
+  const casesInRange = (debouncedSearch ? allCases : cases).filter(c =>
+    c.createdAt && c.createdAt >= monthRange.start && c.createdAt <= monthRange.end
+  );
 
-  // ── Filter ──
+  // Tab counts
+  const tabCounts = useMemo(() => ({
+    "All":          casesInRange.length,
+    "EndoDecide":   casesInRange.filter(c => isEndoDecide(c)).length,
+    "Crack Cases":  casesInRange.filter(c => isLegacyCrack(c)).length,
+    "No Treatment": casesInRange.filter(c => c.treatmentStatus === "No Treatment" && !isLegacyCrack(c)).length,
+    "In-Progress":  casesInRange.filter(c => c.treatmentStatus === "In-Progress").length,
+    "Done":         casesInRange.filter(c => c.treatmentStatus === "Done").length,
+    "Postpone":     casesInRange.filter(c => c.treatmentStatus === "Postpone").length,
+  }), [casesInRange]);
+
+  // Filter by tab
   const filteredCases = useMemo(() => {
-    let result = cases;
-    if (debouncedSearch) {
-      const term = debouncedSearch.toLowerCase().trim();
-      result = result.filter(c => [
-        c.caseName, c.phoneNumber, c.toothNumber, c.toothType,
-        c.pulpalDiagnosis, c.periapicalDiagnosis, c.treatmentRec,
-        c.gender, c.ageGroup, ...(c.affectingFactors || []),
-      ].join(" ").toLowerCase().includes(term));
-    }
+    let result = casesInRange;
     if (activeTab === "EndoDecide")  return result.filter(c => isEndoDecide(c));
     if (activeTab === "Crack Cases") return result.filter(c => isLegacyCrack(c));
     if (activeTab !== "All")         return result.filter(c => c.treatmentStatus === activeTab && !isLegacyCrack(c));
     return result;
-  }, [cases, debouncedSearch, activeTab]);
+  }, [casesInRange, activeTab]);
 
+  // Categorize for display
   const categorizedCases = useMemo(() => {
     const groups: Record<string, SavedCase[]> = {
       "Root Canal Treatment":    [],
@@ -540,8 +679,9 @@ export default function MyCases() {
   }, [filteredCases]);
 
   const legacyCrackCases = useMemo(() => filteredCases.filter(c => isLegacyCrack(c)), [filteredCases]);
-
   const tabs: ActiveTab[] = ["All", "EndoDecide", "Crack Cases", "No Treatment", "In-Progress", "Done", "Postpone"];
+
+  const monthYear = formatMonthYear(selectedMonth, selectedYear);
 
   if (!user) return (
     <ProtectedRoute><Navigation />
@@ -556,7 +696,7 @@ export default function MyCases() {
       <Navigation />
       <div className="min-h-screen bg-[#0a1428] text-white pb-24">
 
-        {/* ── HEADER ── */}
+        {/* HEADER */}
         <div className="border-b border-white/6 bg-[#0d1830]/80 backdrop-blur-md px-4 sm:px-6 pt-8 pb-5">
           <div className="max-w-5xl mx-auto">
 
@@ -569,44 +709,89 @@ export default function MyCases() {
                   My Cases
                 </h1>
                 <p className="text-gray-600 text-xs mt-1">
-                  {loading ? "Loading…" : totalCount !== null
-                    ? `${cases.length} of ${totalCount} loaded`
-                    : `${cases.length} loaded`}
+                  {loading ? "Loading…" : `${casesInRange.length} cases in ${monthYear}`}
                 </p>
               </div>
 
-              {/* Search */}
-              <div className="relative w-full sm:w-72">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" width="13" height="13" viewBox="0 0 16 16" fill="none">
-                  <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <input type="text" placeholder="Search by name, tooth, diagnosis…"
-                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full bg-[#0a1428] border border-white/8 rounded-xl pl-9 pr-8 py-2.5 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-[#10b981]/40 transition-colors" />
-                {searchTerm && (
-                  <button onClick={() => setSearchTerm("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 text-xs transition-colors">✕</button>
-                )}
+              {/* Date range selector + Search + Export */}
+              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                {/* Month selector */}
+                <div className="flex items-center gap-1.5 bg-[#0a1428] border border-white/8 rounded-xl px-2 py-1.5">
+                  <button onClick={() => {
+                    if (selectedMonth === 0) { setSelectedMonth(11); setSelectedYear(selectedYear - 1); }
+                    else setSelectedMonth(selectedMonth - 1);
+                  }}
+                    className="p-1 hover:bg-white/8 rounded transition-colors">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M10 2L5 8l5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                  <select value={`${selectedYear}-${selectedMonth}`}
+                    onChange={e => {
+                      const [y, m] = e.target.value.split("-");
+                      setSelectedYear(Number(y));
+                      setSelectedMonth(Number(m));
+                    }}
+                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer text-center flex-1">
+                    {Array.from({ length: 24 }, (_, i) => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() - i);
+                      return d;
+                    }).map(d => {
+                      const m = d.getMonth();
+                      const y = d.getFullYear();
+                      return <option key={`${y}-${m}`} value={`${y}-${m}`}>{formatMonthYear(m, y)}</option>;
+                    })}
+                  </select>
+                  <button onClick={() => {
+                    if (selectedMonth === 11) { setSelectedMonth(0); setSelectedYear(selectedYear + 1); }
+                    else setSelectedMonth(selectedMonth + 1);
+                  }}
+                    className="p-1 hover:bg-white/8 rounded transition-colors">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M6 2l5 6-5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Search */}
+                <div className="relative flex-1 sm:flex-initial sm:w-64">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  <input type="text" placeholder="Search cases…"
+                    value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                    className="w-full bg-[#0a1428] border border-white/8 rounded-xl pl-9 pr-8 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-[#10b981]/40 transition-colors" />
+                  {searchTerm && (
+                    <button onClick={() => setSearchTerm("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 text-xs transition-colors">✕</button>
+                  )}
+                </div>
+
+                {/* Export button */}
+                <button onClick={() => exportToXLSX(casesInRange, monthYear)}
+                  className="flex items-center gap-2 bg-[#10b981]/20 hover:bg-[#10b981]/30 border border-[#10b981]/30 text-[#10b981] px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 1h10l2 2v11a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1Z" stroke="currentColor" strokeWidth="1.3"/>
+                    <path d="M5 6h6M5 9h6M5 12h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  </svg>
+                  Export
+                </button>
               </div>
             </div>
 
-            {/* ── TABS ── */}
+            {/* TABS */}
             <div className="flex flex-wrap gap-1.5">
               {tabs.map(tab => {
                 const isActive = activeTab === tab;
-                const isEndo  = tab === "EndoDecide";
-                const isCrack = tab === "Crack Cases";
                 return (
                   <button key={tab} onClick={() => setActiveTab(tab)}
                     className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold border transition-all ${
                       isActive
                         ? "bg-[#10b981] border-[#10b981] text-black"
-                        : isEndo
-                          ? "bg-[#10b981]/8 border-[#10b981]/20 text-[#10b981]/80 hover:bg-[#10b981]/15"
-                          : "bg-white/3 border-white/8 text-gray-500 hover:border-white/18 hover:text-gray-300"
+                        : "bg-white/3 border-white/8 text-gray-500 hover:border-white/18 hover:text-gray-300"
                     }`}>
-                    {isCrack && <span className="text-[10px]">🦷</span>}
                     {tab}
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                       isActive ? "bg-black/20 text-black/70" : "bg-white/6 text-gray-600"
@@ -620,7 +805,7 @@ export default function MyCases() {
           </div>
         </div>
 
-        {/* ── BODY ── */}
+        {/* BODY */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7">
 
           {error && (
@@ -637,61 +822,67 @@ export default function MyCases() {
             <div className="space-y-2.5">{[1,2,3,4,5].map(i => <SkeletonCard key={i} />)}</div>
           )}
 
-          {!loading && filteredCases.length === 0 && (
-            <div className="text-center py-24">
-              <svg className="mx-auto mb-4 opacity-15" width="44" height="44" viewBox="0 0 48 48" fill="none">
-                <rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M16 18h16M16 24h16M16 30h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <p className="text-gray-500 text-sm">
-                {debouncedSearch ? `No cases matching "${debouncedSearch}"` : "No cases in this category yet"}
-              </p>
-            </div>
-          )}
+          {!loading && (
+            <>
+              {/* Procedure stat row */}
+              {casesInRange.length > 0 && <ProcedureStatRow cases={casesInRange} />}
 
-          {/* Legacy crack cases */}
-          {!loading && activeTab === "Crack Cases" && legacyCrackCases.length > 0 && (
-            <CaseGroup label="Legacy Crack Classifier" count={legacyCrackCases.length}>
-              {legacyCrackCases.map(c => (
-                <CaseCard key={c.id} c={c} userId={user.uid}
-                  expanded={expandedId === c.id}
-                  onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                  onOpen={() => router.push(`/cases/${c.id}`)}
-                  onStatusUpdated={handleStatusUpdated}
-                  onDeleted={handleDeleted}
-                  onFieldUpdated={handleFieldUpdated}
-                />
-              ))}
-            </CaseGroup>
-          )}
+              {filteredCases.length === 0 && (
+                <div className="text-center py-24">
+                  <svg className="mx-auto mb-4 opacity-15" width="44" height="44" viewBox="0 0 48 48" fill="none">
+                    <rect x="8" y="6" width="32" height="36" rx="4" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M16 18h16M16 24h16M16 30h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  <p className="text-gray-500 text-sm">
+                    {debouncedSearch ? `No cases matching "${debouncedSearch}"` : `No cases in ${monthYear}`}
+                  </p>
+                </div>
+              )}
 
-          {/* All other cases */}
-          {!loading && activeTab !== "Crack Cases" &&
-            Object.entries(categorizedCases).map(([category, list]) => (
-              <CaseGroup key={category} label={category} count={list.length}>
-                {list.map(c => (
-                  <CaseCard key={c.id} c={c} userId={user.uid}
-                    expanded={expandedId === c.id}
-                    onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                    onOpen={() => router.push(`/cases/${c.id}`)}
-                    onStatusUpdated={handleStatusUpdated}
-                    onDeleted={handleDeleted}
-                    onFieldUpdated={handleFieldUpdated}
-                  />
+              {/* Cases display */}
+              {activeTab === "Crack Cases" && legacyCrackCases.length > 0 && (
+                <CaseGroup label="Legacy Crack Classifier" count={legacyCrackCases.length}>
+                  {legacyCrackCases.map(c => (
+                    <CaseCard key={c.id} c={c} userId={user.uid}
+                      expanded={expandedId === c.id}
+                      onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                      onOpen={() => router.push(`/cases/${c.id}`)}
+                      onStatusUpdated={handleStatusUpdated}
+                      onDeleted={handleDeleted}
+                      onFieldUpdated={handleFieldUpdated}
+                    />
+                  ))}
+                </CaseGroup>
+              )}
+
+              {activeTab !== "Crack Cases" &&
+                Object.entries(categorizedCases).map(([category, list]) => (
+                  <CaseGroup key={category} label={category} count={list.length}>
+                    {list.map(c => (
+                      <CaseCard key={c.id} c={c} userId={user.uid}
+                        expanded={expandedId === c.id}
+                        onToggle={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                        onOpen={() => router.push(`/cases/${c.id}`)}
+                        onStatusUpdated={handleStatusUpdated}
+                        onDeleted={handleDeleted}
+                        onFieldUpdated={handleFieldUpdated}
+                      />
+                    ))}
+                  </CaseGroup>
                 ))}
-              </CaseGroup>
-            ))}
 
-          {/* Load more */}
-          {!loading && hasMore && (
-            <div className="flex justify-center mt-10">
-              <button onClick={() => loadCases(true)} disabled={loadingMore}
-                className="flex items-center gap-2 bg-white/4 hover:bg-white/8 border border-white/8 hover:border-white/18 px-7 py-3 rounded-full text-sm font-semibold transition-all disabled:opacity-50">
-                {loadingMore
-                  ? <><span className="w-4 h-4 rounded-full border-2 border-white/20 border-t-white/60 animate-spin" /> Loading…</>
-                  : <>Load more <span className="text-gray-600 text-xs">({totalCount ? totalCount - cases.length : "?"} remaining)</span></>}
-              </button>
-            </div>
+              {/* Load more (only when not searching and showing initial pagination) */}
+              {!debouncedSearch && !loading && hasMore && (
+                <div className="flex justify-center mt-10">
+                  <button onClick={() => loadCases(true)} disabled={loadingMore}
+                    className="flex items-center gap-2 bg-white/4 hover:bg-white/8 border border-white/8 hover:border-white/18 px-7 py-3 rounded-full text-sm font-semibold transition-all disabled:opacity-50">
+                    {loadingMore
+                      ? <><span className="w-4 h-4 rounded-full border-2 border-white/20 border-t-white/60 animate-spin" /> Loading…</>
+                      : <>Load more <span className="text-gray-600 text-xs">({totalCount ? totalCount - cases.length : "?"} remaining)</span></>}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -700,7 +891,7 @@ export default function MyCases() {
 }
 
 // ════════════════════════════════════════════════════════════
-// CASE GROUP WRAPPER
+// CASE GROUP
 // ════════════════════════════════════════════════════════════
 function CaseGroup({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
   return (
@@ -756,23 +947,18 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
       expanded ? "border-[#10b981]/20" : "border-white/6 hover:border-white/12"
     }`}>
 
-      {/* ── COLLAPSED HEADER (always visible) ── */}
+      {/* COLLAPSED HEADER */}
       <div
         onClick={onToggle}
         className="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none"
       >
-        {/* Survival circle */}
         <SurvivalCircle value={crack ? undefined : survival} />
 
-        {/* Core info */}
         <div className="flex-1 min-w-0">
-          {/* Row 1: name + meta-badges */}
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-semibold text-white leading-tight truncate max-w-[180px] sm:max-w-none">
               {c.caseName}
             </p>
-
-            {/* Tool type badge */}
             {endo && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/20 leading-none">
                 ENDODECIDE
@@ -783,8 +969,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                 LEGACY
               </span>
             )}
-
-            {/* Urgency — shown only when set */}
             {urgency && (
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border leading-none ${urgency.color} ${urgency.bg} ${urgency.border}`}>
                 {urgency.label.toUpperCase()}
@@ -792,7 +976,6 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             )}
           </div>
 
-          {/* Row 2: tooth + patient quick info */}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className="text-[11px] text-gray-500">
               🦷 #{c.toothNumber} · {c.toothType}
@@ -807,26 +990,22 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             )}
           </div>
 
-          {/* Row 3: diagnosis line */}
           {(c.pulpalDiagnosis || c.treatmentRec) && (
             <p className="text-[10px] text-gray-600 mt-0.5 truncate">
               {[c.pulpalDiagnosis, c.periapicalDiagnosis].filter(Boolean).join(" · ")}
             </p>
           )}
 
-          {/* Row 4: clinical flags — Iowa, VRF, Practical — full-width, prominent */}
           {(c.iowaStage || hasVRF || c.isPractical !== undefined || crack) && (
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               {c.iowaStage && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-orange-500/10 border border-orange-500/20 text-orange-400">
-                  <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M5 1v4M5 7v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                  Iowa {c.iowaStage}
-                  {c.iowaSuccessRate ? <span className="text-orange-600 ml-0.5">· {c.iowaSuccessRate}% success</span> : ""}
+                  Iowa {c.iowaStage} {c.iowaSuccessRate ? `· ${c.iowaSuccessRate}%` : ""}
                 </span>
               )}
               {hasVRF && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400">
-                  ⚠ VRF — cannot exclude
+                  ⚠ VRF
                 </span>
               )}
               {!crack && c.isPractical !== undefined && (
@@ -838,14 +1017,10 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                   {c.isPractical ? "✓ Retain" : "✗ Impractical"}
                 </span>
               )}
-              {crack && (
-                <span className="text-[10px] text-gray-600">Crack Classifier case</span>
-              )}
             </div>
           )}
         </div>
 
-        {/* Status cycler — rightmost, always visible */}
         <div className="flex-shrink-0 flex flex-col items-end gap-2" onClick={e => e.stopPropagation()}>
           <StatusCycler
             caseId={c.id} current={c.treatmentStatus}
@@ -854,18 +1029,17 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
           />
         </div>
 
-        {/* Expand chevron */}
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none"
           className={`flex-shrink-0 text-gray-600 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>
           <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
 
-      {/* ── EXPANDED PANEL ── */}
+      {/* EXPANDED PANEL */}
       {expanded && (
         <div className="border-t border-white/6">
 
-          {/* ── SECTION: Status selector (full 4-option row) ── */}
+          {/* Status Selector */}
           <div className="px-4 py-4 border-b border-white/6">
             <p className="text-[9px] uppercase tracking-[3px] text-gray-600 font-semibold mb-2.5">Treatment Status</p>
             <StatusSelector
@@ -875,7 +1049,7 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             />
           </div>
 
-          {/* ── SECTION: Patient details (editable) ── */}
+          {/* Patient Details */}
           <div className="px-4 py-4 border-b border-white/6">
             <p className="text-[9px] uppercase tracking-[3px] text-[#10b981]/50 font-semibold mb-3">Patient Details</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
@@ -892,7 +1066,7 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             </div>
           </div>
 
-          {/* ── SECTION: Clinical (editable) ── */}
+          {/* Clinical */}
           {!crack && (
             <div className="px-4 py-4 border-b border-white/6">
               <p className="text-[9px] uppercase tracking-[3px] text-[#10b981]/50 font-semibold mb-3">
@@ -903,13 +1077,12 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                   type="select" options={[
                     "Normal Pulp","Reversible Pulpitis","Irreversible Pulpitis","Pulp Necrosis",
                     "Previously Initiated Therapy","Previously Treated",
-                    "Previously initiated root canal treatment","Previously root canal treated",
                   ]} onSaved={handleSaved} />
                 <EditableField label="Periapical Diagnosis" field="periapicalDiagnosis" caseId={c.id} value={c.periapicalDiagnosis}
                   type="select" options={[
                     "Normal Apical Tissues","Symptomatic Apical Periodontitis",
                     "Asymptomatic Apical Periodontitis","Acute Apical Abscess",
-                    "Chronic Apical Abscess","Normal Apical tissue",
+                    "Chronic Apical Abscess",
                   ]} onSaved={handleSaved} />
                 <EditableField label="Treatment Recommendation" field="treatmentRec" caseId={c.id} value={c.treatmentRec}
                   type="select" options={[
@@ -926,32 +1099,7 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             </div>
           )}
 
-          {/* ── SECTION: Crack / Iowa (EndoDecide combined, read-only display) ── */}
-          {endo && (c.iowaStage || hasVRF) && (
-            <div className="px-4 py-4 border-b border-white/6">
-              <p className="text-[9px] uppercase tracking-[3px] text-orange-400/50 font-semibold mb-3">Crack Assessment</p>
-              <div className="flex flex-wrap gap-3">
-                {c.iowaStage && (
-                  <div className="bg-orange-500/6 border border-orange-500/15 rounded-xl px-4 py-3 min-w-[120px] text-center">
-                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">Iowa Stage</p>
-                    <p className="text-2xl font-black text-orange-400 leading-none">{c.iowaStage}</p>
-                    {c.iowaSuccessRate && (
-                      <p className="text-[10px] text-gray-600 mt-1">{c.iowaSuccessRate}% 1-yr success</p>
-                    )}
-                  </div>
-                )}
-                {hasVRF && (
-                  <div className="bg-red-500/6 border border-red-500/15 rounded-xl px-4 py-3 min-w-[160px] text-center">
-                    <p className="text-[9px] text-gray-600 uppercase tracking-wider mb-1">VRF Risk</p>
-                    <p className="text-sm font-bold text-red-400">⚠ Cannot exclude</p>
-                    <p className="text-[10px] text-gray-600 mt-1">Direct visualization required</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── SECTION: Calculated values (read-only) ── */}
+          {/* Prognosis */}
           {!crack && (survival !== undefined || c.epPoints !== undefined || c.remainingPercent !== undefined) && (
             <div className="px-4 py-4 border-b border-white/6">
               <p className="text-[9px] uppercase tracking-[3px] text-gray-600 font-semibold mb-3">Prognosis Metrics</p>
@@ -960,11 +1108,8 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                   <div className="flex items-center gap-3 bg-white/3 rounded-xl px-4 py-3 min-w-[140px]">
                     <SurvivalCircle value={survival} />
                     <div>
-                      <p className="text-[9px] text-gray-600 uppercase tracking-wider">Survival estimate</p>
+                      <p className="text-[9px] text-gray-600 uppercase tracking-wider">Survival</p>
                       <p className={`text-xl font-black leading-none mt-0.5 ${survivalColor(survival)}`}>{survival}%</p>
-                      {c.survivalRange && (
-                        <p className="text-[9px] text-gray-600 mt-0.5">Range: {c.survivalRange[0]}–{c.survivalRange[1]}%</p>
-                      )}
                     </div>
                   </div>
                 )}
@@ -974,17 +1119,11 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                     <p className="text-xl font-black text-[#10b981] mt-0.5">{c.epPoints}</p>
                   </div>
                 )}
-                {c.remainingPercent !== undefined && (
-                  <div className="bg-white/3 rounded-xl px-4 py-3 text-center min-w-[90px]">
-                    <p className="text-[9px] text-gray-600 uppercase tracking-wider">Structure</p>
-                    <p className="text-xl font-black text-amber-400 mt-0.5">{c.remainingPercent}%</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          {/* ── SECTION: Affecting factors ── */}
+          {/* Affecting Factors */}
           {c.affectingFactors && c.affectingFactors.length > 0 && (
             <div className="px-4 py-4 border-b border-white/6">
               <p className="text-[9px] uppercase tracking-[3px] text-gray-600 font-semibold mb-2.5">Affecting Factors</p>
@@ -996,15 +1135,14 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
             </div>
           )}
 
-          {/* ── SECTION: Notes ── */}
+          {/* Notes */}
           <div className="px-4 py-4 border-b border-white/6">
             <p className="text-[9px] uppercase tracking-[3px] text-[#10b981]/50 font-semibold mb-3">Notes</p>
             <EditableField label="Further Notes" field="furtherNote" caseId={c.id} value={c.furtherNote} type="textarea" onSaved={handleSaved} />
           </div>
 
-          {/* ── SECTION: Actions ── */}
+          {/* Actions */}
           <div className="px-4 py-3 flex items-center justify-between gap-3">
-            {/* Delete */}
             <div className="flex items-center gap-2">
               {confirmDelete ? (
                 <>
@@ -1024,15 +1162,13 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                   <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
                     <path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  Delete case
+                  Delete
                 </button>
               )}
             </div>
-
-            {/* Full detail page */}
             <button onClick={onOpen}
               className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#10b981] transition-colors">
-              Full detail page
+              View detail
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
                 <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
