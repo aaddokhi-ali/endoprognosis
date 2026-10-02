@@ -1,7 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ref,
@@ -39,9 +39,20 @@ const RADIOGRAPH_TYPES = {
 };
 
 // ════════════════════════════════════════════════════════════
-// MAIN COMPONENT
+// LOADING FALLBACK
 // ════════════════════════════════════════════════════════════
-export default function RadioGraphsUploadPage() {
+function LoadingSpinner() {
+  return (
+    <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
+      <div className="w-10 h-10 rounded-full border-2 border-[#10b981]/30 border-t-[#10b981] animate-spin" />
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// MAIN CONTENT COMPONENT
+// ════════════════════════════════════════════════════════════
+function RadioGraphsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -248,262 +259,267 @@ export default function RadioGraphsUploadPage() {
 
   if (loading) {
     return (
-      <ProtectedRoute>
-        <Navigation />
-        <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
-          <div className="w-10 h-10 rounded-full border-2 border-[#10b981]/30 border-t-[#10b981] animate-spin" />
-        </div>
-      </ProtectedRoute>
+      <div className="min-h-screen bg-[#0a1428] flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full border-2 border-[#10b981]/30 border-t-[#10b981] animate-spin" />
+      </div>
     );
   }
 
   if (!caseId) {
     return (
-      <ProtectedRoute>
-        <Navigation />
-        <div className="min-h-screen bg-[#0a1428] text-white flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-red-400 mb-4">No case ID provided</p>
-            <button
-              onClick={() => router.push("/mycases")}
-              className="text-[#10b981] hover:underline"
-            >
-              Back to My Cases
-            </button>
-          </div>
+      <div className="min-h-screen bg-[#0a1428] text-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-400 mb-4">No case ID provided</p>
+          <button
+            onClick={() => router.push("/mycases")}
+            className="text-[#10b981] hover:underline"
+          >
+            Back to My Cases
+          </button>
         </div>
-      </ProtectedRoute>
+      </div>
     );
   }
 
   return (
-    <ProtectedRoute>
-      <Navigation />
-      <div className="min-h-screen bg-[#0a1428] text-white pb-20">
-        <div className="border-b border-white/8 bg-[#0d1a30]/80 backdrop-blur-sm px-4 sm:px-6 py-8">
-          <div className="max-w-3xl mx-auto">
-            <h1 className="text-2xl font-bold mb-2">Upload Radiographs</h1>
-            <p className="text-gray-400">
-              Add radiographs to your case. Skip if you don't have any yet.
-            </p>
-          </div>
-        </div>
-
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-          {/* Error alert */}
-          {error && (
-            <div className="flex items-start gap-3 bg-red-500/8 border border-red-500/25 rounded-2xl px-4 py-3.5 mb-6">
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                className="text-red-400 flex-shrink-0 mt-0.5"
-              >
-                <path
-                  d="M8 2L14 13H2L8 2Z"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M8 7v3M8 11.5v.5"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <p className="text-sm text-red-300">{error}</p>
-            </div>
-          )}
-
-          {/* Upload area */}
-          <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all mb-6 ${
-              dragActive
-                ? "border-[#10b981] bg-[#10b981]/5"
-                : "border-white/20 bg-white/2"
-            }`}
-          >
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 48 48"
-              fill="none"
-              className="mx-auto mb-4 opacity-60"
-            >
-              <path
-                d="M24 6v24M12 18l12-12 12 12"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <rect x="6" y="34" width="36" height="4" rx="1" fill="currentColor" />
-            </svg>
-
-            <p className="text-lg font-semibold mb-2">Drag radiographs here</p>
-            <p className="text-sm text-gray-500 mb-6">
-              or{" "}
-              <label className="text-[#10b981] cursor-pointer hover:underline">
-                browse files
-                <input
-                  type="file"
-                  multiple
-                  accept=".jpg,.jpeg,.png,.pdf"
-                  onChange={handleFileInput}
-                  className="hidden"
-                />
-              </label>
-            </p>
-            <p className="text-xs text-gray-600">
-              JPEG, PNG, PDF (max 10MB per file)
-            </p>
-          </div>
-
-          {/* File list */}
-          {files.length > 0 && (
-            <div className="space-y-3 mb-6">
-              <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-                Radiographs to upload ({files.length})
-              </p>
-
-              {files.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-4 bg-[#0d1a30] border border-white/8 rounded-2xl p-4"
-                >
-                  {/* Thumbnail */}
-                  <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-black/40 border border-white/8">
-                    {item.file.type.startsWith("image") ? (
-                      <img
-                        src={item.preview}
-                        alt={item.file.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-2xl">📄</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* File info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">
-                      {item.file.name}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {(item.file.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-
-                  {/* Type selector */}
-                  <select
-                    value={item.type}
-                    onChange={e =>
-                      updateFileType(
-                        idx,
-                        e.target.value as
-                          | "periapical"
-                          | "bitewing"
-                          | "occlusal"
-                          | "panoramic"
-                          | "other"
-                      )
-                    }
-                    className="bg-[#0a1428] border border-white/15 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#10b981] transition-colors"
-                  >
-                    {Object.entries(RADIOGRAPH_TYPES).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Upload progress */}
-                  {uploading && uploadProgress[idx] !== undefined && (
-                    <div className="w-20 text-center">
-                      {uploadProgress[idx] === 100 ? (
-                        <svg
-                          width="20"
-                          height="20"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          className="mx-auto text-emerald-400"
-                        >
-                          <path
-                            d="M20 6L9 17l-5-5"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      ) : (
-                        <div className="text-xs text-gray-500">
-                          {uploadProgress[idx]}%
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Remove button */}
-                  {!uploading && (
-                    <button
-                      onClick={() => removeFile(idx)}
-                      className="flex-shrink-0 p-2 hover:bg-red-500/10 rounded-lg transition-colors"
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                      >
-                        <path
-                          d="M2 2l12 12M14 2L2 14"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Action buttons */}
-          <div className="flex gap-4">
-            <button
-              onClick={handleUpload}
-              disabled={uploading || files.length === 0}
-              className="flex-1 bg-[#10b981] hover:bg-[#0ea76e] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold py-4 rounded-2xl transition-all"
-            >
-              {uploading ? "Uploading..." : "Upload Radiographs"}
-            </button>
-
-            <button
-              onClick={() => router.push("/mycases")}
-              disabled={uploading}
-              className="flex-1 bg-white/8 hover:bg-white/15 disabled:opacity-50 border border-white/10 font-semibold py-4 rounded-2xl transition-all"
-            >
-              {files.length === 0 ? "Skip for Now" : "Cancel"}
-            </button>
-          </div>
-
-          {/* Info */}
-          <p className="text-xs text-gray-600 text-center mt-6">
-            Radiographs are stored securely and associated with this case.
-            You can upload more later.
+    <div className="min-h-screen bg-[#0a1428] text-white pb-20">
+      <div className="border-b border-white/8 bg-[#0d1a30]/80 backdrop-blur-sm px-4 sm:px-6 py-8">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-2xl font-bold mb-2">Upload Radiographs</h1>
+          <p className="text-gray-400">
+            Add radiographs to your case. Skip if you don't have any yet.
           </p>
         </div>
       </div>
+
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        {/* Error alert */}
+        {error && (
+          <div className="flex items-start gap-3 bg-red-500/8 border border-red-500/25 rounded-2xl px-4 py-3.5 mb-6">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="text-red-400 flex-shrink-0 mt-0.5"
+            >
+              <path
+                d="M8 2L14 13H2L8 2Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M8 7v3M8 11.5v.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+            <p className="text-sm text-red-300">{error}</p>
+          </div>
+        )}
+
+        {/* Upload area */}
+        <div
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all mb-6 ${
+            dragActive
+              ? "border-[#10b981] bg-[#10b981]/5"
+              : "border-white/20 bg-white/2"
+          }`}
+        >
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 48 48"
+            fill="none"
+            className="mx-auto mb-4 opacity-60"
+          >
+            <path
+              d="M24 6v24M12 18l12-12 12 12"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <rect x="6" y="34" width="36" height="4" rx="1" fill="currentColor" />
+          </svg>
+
+          <p className="text-lg font-semibold mb-2">Drag radiographs here</p>
+          <p className="text-sm text-gray-500 mb-6">
+            or{" "}
+            <label className="text-[#10b981] cursor-pointer hover:underline">
+              browse files
+              <input
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={handleFileInput}
+                className="hidden"
+              />
+            </label>
+          </p>
+          <p className="text-xs text-gray-600">
+            JPEG, PNG, PDF (max 10MB per file)
+          </p>
+        </div>
+
+        {/* File list */}
+        {files.length > 0 && (
+          <div className="space-y-3 mb-6">
+            <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+              Radiographs to upload ({files.length})
+            </p>
+
+            {files.map((item, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-4 bg-[#0d1a30] border border-white/8 rounded-2xl p-4"
+              >
+                {/* Thumbnail */}
+                <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-black/40 border border-white/8">
+                  {item.file.type.startsWith("image") ? (
+                    <img
+                      src={item.preview}
+                      alt={item.file.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-2xl">📄</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* File info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {item.file.name}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
+                </div>
+
+                {/* Type selector */}
+                <select
+                  value={item.type}
+                  onChange={e =>
+                    updateFileType(
+                      idx,
+                      e.target.value as
+                        | "periapical"
+                        | "bitewing"
+                        | "occlusal"
+                        | "panoramic"
+                        | "other"
+                    )
+                  }
+                  className="bg-[#0a1428] border border-white/15 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#10b981] transition-colors"
+                >
+                  {Object.entries(RADIOGRAPH_TYPES).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Upload progress */}
+                {uploading && uploadProgress[idx] !== undefined && (
+                  <div className="w-20 text-center">
+                    {uploadProgress[idx] === 100 ? (
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        className="mx-auto text-emerald-400"
+                      >
+                        <path
+                          d="M20 6L9 17l-5-5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      <div className="text-xs text-gray-500">
+                        {uploadProgress[idx]}%
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Remove button */}
+                {!uploading && (
+                  <button
+                    onClick={() => removeFile(idx)}
+                    className="flex-shrink-0 p-2 hover:bg-red-500/10 rounded-lg transition-colors"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M2 2l12 12M14 2L2 14"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-4">
+          <button
+            onClick={handleUpload}
+            disabled={uploading || files.length === 0}
+            className="flex-1 bg-[#10b981] hover:bg-[#0ea76e] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold py-4 rounded-2xl transition-all"
+          >
+            {uploading ? "Uploading..." : "Upload Radiographs"}
+          </button>
+
+          <button
+            onClick={() => router.push("/mycases")}
+            disabled={uploading}
+            className="flex-1 bg-white/8 hover:bg-white/15 disabled:opacity-50 border border-white/10 font-semibold py-4 rounded-2xl transition-all"
+          >
+            {files.length === 0 ? "Skip for Now" : "Cancel"}
+          </button>
+        </div>
+
+        {/* Info */}
+        <p className="text-xs text-gray-600 text-center mt-6">
+          Radiographs are stored securely and associated with this case.
+          You can upload more later.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// PAGE COMPONENT WITH SUSPENSE WRAPPER
+// ════════════════════════════════════════════════════════════
+export default function RadioGraphsUploadPage() {
+  return (
+    <ProtectedRoute>
+      <Navigation />
+      <Suspense fallback={<LoadingSpinner />}>
+        <RadioGraphsContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }
