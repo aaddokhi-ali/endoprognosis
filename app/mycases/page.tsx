@@ -486,6 +486,7 @@ function ProcedureStatRow({ cases }: { cases: SavedCase[] }) {
 export default function MyCases() {
   const [cases, setCases]             = useState<SavedCase[]>([]);
   const [allCases, setAllCases]       = useState<SavedCase[]>([]);
+  const [monthCases, setMonthCases]   = useState<SavedCase[]>([]); // All cases for selected month
   const [lastDoc, setLastDoc]         = useState<any>(null);
   const [hasMore, setHasMore]         = useState(true);
   const [totalCount, setTotalCount]   = useState<number | null>(null);
@@ -614,15 +615,49 @@ export default function MyCases() {
     fetchCount();
   }, [user]);
 
+  // Load ALL cases for selected month (for accurate stats)
+  useEffect(() => {
+    if (!user) return;
+    const loadMonthCases = async () => {
+      try {
+        const { start, end } = getMonthRange(selectedMonth, selectedYear);
+        const q = query(
+          collection(db, "cases"),
+          where("userId", "==", user.uid),
+          where("createdAt", ">=", start),
+          where("createdAt", "<=", end),
+          orderBy("createdAt", "desc")
+          // NO limit() — fetch ALL cases for this month
+        );
+        const snapshot = await getDocs(q);
+        const allMonthCases: SavedCase[] = snapshot.docs.map(d => {
+          const data = d.data() as Omit<SavedCase, "id">;
+          return {
+            id: d.id, ...data,
+            treatmentStatus:  (data.treatmentStatus ?? "No Treatment") as TreatmentStatus,
+            followUpDate:     data.followUpDate ?? null,
+            affectingFactors: data.affectingFactors ?? [],
+          } as SavedCase;
+        });
+        setMonthCases(allMonthCases);
+      } catch (err) {
+        console.error("Failed to load month cases:", err);
+      }
+    };
+    loadMonthCases();
+  }, [selectedMonth, selectedYear, user]);
+
   // Optimistic handlers
   const handleStatusUpdated = useCallback((id: string, next: TreatmentStatus) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
     setAllCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
+    setMonthCases(prev => prev.map(c => c.id === id ? { ...c, treatmentStatus: next } : c));
   }, []);
 
   const handleDeleted = useCallback((id: string) => {
     setCases(prev => prev.filter(c => c.id !== id));
     setAllCases(prev => prev.filter(c => c.id !== id));
+    setMonthCases(prev => prev.filter(c => c.id !== id));
     setTotalCount(prev => prev !== null ? prev - 1 : null);
     setExpandedId(prev => prev === id ? null : prev);
   }, []);
@@ -630,13 +665,16 @@ export default function MyCases() {
   const handleFieldUpdated = useCallback((id: string, fields: Partial<SavedCase>) => {
     setCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
     setAllCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
+    setMonthCases(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
   }, []);
 
   // Filter by date range
   const monthRange = getMonthRange(selectedMonth, selectedYear);
-  const casesInRange = (debouncedSearch ? allCases : cases).filter(c =>
-    c.createdAt && c.createdAt >= monthRange.start && c.createdAt <= monthRange.end
-  );
+  // Use monthCases (all cases for selected month) for accurate stats
+  // When searching, fall back to allCases; otherwise use monthCases
+  const casesInRange = debouncedSearch 
+    ? allCases.filter(c => c.createdAt && c.createdAt >= monthRange.start && c.createdAt <= monthRange.end)
+    : monthCases;
 
   // Tab counts
   const tabCounts = useMemo(() => ({
