@@ -1,13 +1,13 @@
 // app/endodecide/radiographs/page.tsx
+export const dynamic = "force-dynamic";
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ref,
   uploadBytes,
   getDownloadURL,
-  listAll,
 } from "firebase/storage";
 import {
   collection,
@@ -21,7 +21,6 @@ import { storage, db } from "../../firebaseConfig";
 import { useAuth } from "../../context/AuthContext";
 import Navigation from "../../components/navigation";
 import ProtectedRoute from "../../components/protectedroute";
-
 // ════════════════════════════════════════════════════════════
 // TYPES
 // ════════════════════════════════════════════════════════════
