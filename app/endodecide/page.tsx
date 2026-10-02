@@ -115,17 +115,59 @@ function computeRemainingPercent(walls: WallStates, occlusal: OcclusalState): nu
 }
 
 // ════════════════════════════════════════════════════════════
-// DIAGNOSIS LOGIC
+// DIAGNOSIS LOGIC — FIXED
 // ════════════════════════════════════════════════════════════
 function derivePulpalDiagnosis(form: any): { diagnosis: string; isInconsistent: boolean; inconsistencyNote: string } {
   if (form.rootTreated  === "yes") return { diagnosis: "Previously Treated",           isInconsistent: false, inconsistencyNote: "" };
   if (form.rootAccessed === "yes") return { diagnosis: "Previously Initiated Therapy", isInconsistent: false, inconsistencyNote: "" };
-  const cold = form.coldTest; const sp = form.spontaneous === "yes"; const no = form.nocturnal === "yes";
-  if (cold === "none" && (sp || no)) return { diagnosis: "Pulp Necrosis", isInconsistent: true, inconsistencyNote: "Inconsistent finding: no cold response with spontaneous pain may indicate partial necrosis. Pulp Necrosis recorded — correlate with radiographic findings." };
-  if (cold === "none")             return { diagnosis: "Pulp Necrosis",         isInconsistent: false, inconsistencyNote: "" };
-  if (cold === "lingering_long" || sp || no) return { diagnosis: "Irreversible Pulpitis", isInconsistent: false, inconsistencyNote: "" };
-  if (cold === "lingering_short")  return { diagnosis: "Reversible Pulpitis",   isInconsistent: false, inconsistencyNote: "" };
-  if (cold === "normal")           return { diagnosis: "Normal Pulp",           isInconsistent: false, inconsistencyNote: "" };
+  
+  const cold = form.coldTest;
+  const sp = form.spontaneous === "yes";
+  const no = form.nocturnal === "yes";
+  
+  // ── Periapical signs indicate apical PDL involvement ──
+  // Reversible pulpitis has NO apical involvement; presence of apical signs
+  // means the inflammation extends beyond the pulp
+  const hasApicalSigns = form.percussion === "yes" || form.palpation === "yes" || form.periApical === "yes" || form.swelling === "yes" || form.sinus === "yes";
+  
+  // ── No cold response = Necrosis ──
+  if (cold === "none" && (sp || no)) {
+    return { diagnosis: "Pulp Necrosis", isInconsistent: true, inconsistencyNote: "Inconsistent finding: no cold response with spontaneous pain may indicate partial necrosis. Pulp Necrosis recorded — correlate with radiographic findings." };
+  }
+  if (cold === "none") {
+    return { diagnosis: "Pulp Necrosis", isInconsistent: false, inconsistencyNote: "" };
+  }
+  
+  // ── Lingering long OR spontaneous/nocturnal pain = Irreversible ──
+  if (cold === "lingering_long" || sp || no) {
+    return { diagnosis: "Irreversible Pulpitis", isInconsistent: false, inconsistencyNote: "" };
+  }
+  
+  // ── Lingering short: MUST check for apical signs ──
+  // Reversible pulpitis is confined to the pulp; apical signs mean it's irreversible
+  if (cold === "lingering_short") {
+    if (hasApicalSigns) {
+      return {
+        diagnosis: "Irreversible Pulpitis",
+        isInconsistent: true,
+        inconsistencyNote: "Lingering cold response with apical signs (percussion/palpation tenderness, periapical lesion, swelling, sinus tract) indicates the pulp is irreversibly inflamed, not reversibly inflamed. Periapical signs override isolated cold testing. Irreversible Pulpitis recorded."
+      };
+    }
+    return { diagnosis: "Reversible Pulpitis", isInconsistent: false, inconsistencyNote: "" };
+  }
+  
+  // ── Normal response: apical signs still override ──
+  if (cold === "normal") {
+    if (hasApicalSigns) {
+      return {
+        diagnosis: "Irreversible Pulpitis",
+        isInconsistent: true,
+        inconsistencyNote: "Normal cold response but apical signs present — inconsistent. Apical signs indicate pulpal involvement and inflammation extending to periapical tissues. Irreversible Pulpitis recorded."
+      };
+    }
+    return { diagnosis: "Normal Pulp", isInconsistent: false, inconsistencyNote: "" };
+  }
+  
   return { diagnosis: "Not determined", isInconsistent: false, inconsistencyNote: "" };
 }
 
