@@ -1,4 +1,3 @@
-// app/mycases/page.tsx
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
@@ -642,15 +641,21 @@ export default function MyCases() {
     return () => clearTimeout(t);
   }, [searchTerm]);
 
-  // Fetch count
+  // Fetch count (month-specific)
   const fetchCount = useCallback(async () => {
     if (!user) return;
     try {
-      const q = query(collection(db, "cases"), where("userId", "==", user.uid));
+      const { start, end } = getMonthRange(selectedMonth, selectedYear);
+      const q = query(
+        collection(db, "cases"),
+        where("userId", "==", user.uid),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end)
+      );
       const snap = await getCountFromServer(q);
       setTotalCount(snap.data().count);
     } catch {}
-  }, [user]);
+  }, [user, selectedMonth, selectedYear]);
 
   // Load cases (initial + pagination)
   const loadCases = useCallback(async (loadMore = false) => {
@@ -741,7 +746,14 @@ export default function MyCases() {
     hasFetched.current = true;
     loadCases(false);
     fetchCount();
-  }, [user]);
+  }, [user, loadCases, fetchCount]);
+
+  // Refetch count when month/year changes
+  useEffect(() => {
+    if (user) {
+      fetchCount();
+    }
+  }, [user, selectedMonth, selectedYear, fetchCount]);
 
   // Optimistic handlers
   const handleStatusUpdated = useCallback((id: string, next: TreatmentStatus) => {
@@ -838,7 +850,7 @@ export default function MyCases() {
                   My Cases
                 </h1>
                 <p className="text-gray-600 text-xs mt-1">
-                  {loading ? "Loading…" : `${casesInRange.length} cases in ${monthYear}`}
+                  {loading ? "Loading…" : `${totalCount ?? casesInRange.length} cases in ${monthYear}`}
                 </p>
               </div>
 
@@ -1294,13 +1306,27 @@ function CaseCard({ c, userId, expanded, onToggle, onOpen, onStatusUpdated, onDe
                   </button>
                 </>
               ) : (
-                <button onClick={handleDelete}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 hover:text-red-400 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-500/8 border border-transparent hover:border-red-500/15">
-                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
-                    <path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  Delete
-                </button>
+                <>
+                  {endo && (
+                    <button onClick={e => {
+                      e.stopPropagation();
+                      window.location.href = `/endodecide/radiographs?caseId=${c.id}`;
+                    }}
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-[#10b981] hover:text-[#0ea76e] transition-colors px-2 py-1.5 rounded-lg hover:bg-[#10b981]/8 border border-transparent hover:border-[#10b981]/15">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                      Upload X-rays
+                    </button>
+                  )}
+                  <button onClick={handleDelete}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 hover:text-red-400 transition-colors px-2 py-1.5 rounded-lg hover:bg-red-500/8 border border-transparent hover:border-red-500/15">
+                    <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                      <path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    Delete
+                  </button>
+                </>
               )}
             </div>
             <button onClick={onOpen}
