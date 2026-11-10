@@ -58,6 +58,9 @@ interface ResultData {
   postWithoutCrown?: string;
   obturationNarrative?: string;
   deepCount?: number;
+  engineVersion?: string;
+  breakdown?: any;
+  advisedPathway?: string;
 }
 
 interface IowaType {
@@ -70,7 +73,7 @@ const CROWN_PREP_DISPLAY: Record<string, any> = {
   minimal: { label: "Minimal Prep", sublabel: "Enamel/dentin boundary", evidence: "Highest survival potential", hex: "#10b981", bg: "bg-emerald-500/10", border: "border-emerald-500/25", color: "text-emerald-400" },
   moderate: { label: "Moderate Prep", sublabel: "Half coronal structure", evidence: "Moderate crown success", hex: "#f59e0b", bg: "bg-amber-500/10", border: "border-amber-500/25", color: "text-amber-400" },
   severe: { label: "Severe Loss", sublabel: ">50% lost, ferrule present", evidence: "Post and crown required", hex: "#f97316", bg: "bg-orange-500/10", border: "border-orange-500/25", color: "text-orange-400" },
-  aggressive: { label: "Post Without Crown", sublabel: "Decoronated tooth", evidence: "25.6% survival — 100% fracture-related", hex: "#ef4444", bg: "bg-red-500/10", border: "border-red-500/25", color: "text-red-400" },
+  aggressive: { label: "Aggressive Prep", sublabel: "No walls remaining or decoronated", evidence: "Highest fracture risk — post and crown lengthening required", hex: "#ef4444", bg: "bg-red-500/10", border: "border-red-500/25", color: "text-red-400" },
 };
 
 const RESTO_LABEL: Record<string, string> = {
@@ -112,7 +115,7 @@ function SurvivalGauge({ value, range, accent }: { value: number; range: [number
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-4xl font-black" style={{ color: accent }}>{value}</span>
         <span className="text-xs text-gray-500 mt-1">%</span>
-        <span className="text-[10px] text-gray-600 mt-1">{range[0]}–{range[1]}%</span>
+        <span className="text-[10px] text-gray-600 mt-1">±3: {range[0]}–{range[1]}%</span>
       </div>
     </div>
   );
@@ -145,7 +148,7 @@ function DPIBar({ value }: { value: number }) {
       </div>
       <div className="text-center mt-2">
         <p className="text-lg font-black" style={{ color }}>{value}</p>
-        <p className="text-[9px] text-gray-600">DPI Score</p>
+        <p className="text-[9px] text-gray-600">EPI score</p>
       </div>
     </div>
   );
@@ -191,6 +194,49 @@ function TierBreakdown({ baseline, t1, t2, t3, t4, isRetreatment }: any) {
   );
 }
 
+function BreakdownTable({ breakdown, survival, baseline, t1, t2, t3, t4, isRetreatment }: any) {
+  const b = breakdown;
+  const line = (key: string, label: string, value: string, tone: string, sub?: string) => (
+    <div key={key} className="flex justify-between gap-4 text-xs">
+      <span className="text-gray-400">
+        {label}
+        {sub && <span className="block text-[10px] text-gray-600 mt-0.5">{sub}</span>}
+      </span>
+      <span className={`${tone} flex-shrink-0`}>{value}</span>
+    </div>
+  );
+  const finalTone = (v: number) => (v >= 80 ? "text-emerald-400" : v >= 65 ? "text-amber-400" : "text-red-400");
+  if (!b) {
+    // A report made before the breakdown was recorded. These lines leave out the prosthodontic context and the 35 to 92 limits.
+    return (
+      <div className="bg-white/3 rounded-2xl p-4 mb-4 space-y-2">
+        {line("base", `Baseline`, `${baseline}%`, "text-white font-bold")}
+        {t1 > 0 && line("t1", "Tier 1 Deduction", `−${t1}%`, "text-red-400")}
+        {t2 > 0 && line("t2", "Tier 2 Deduction", `−${t2}%`, "text-red-400")}
+        {t3 > 0 && line("t3", "Tier 3 Deduction", `−${t3}%`, "text-red-400")}
+        {isRetreatment && t4 > 0 && line("t4", "Tier 4 Deduction (Retreatment)", `−${t4}%`, "text-red-400")}
+        <div className="border-t border-white/10 pt-2">{line("fin", "Survival estimate", `${survival}%`, `${finalTone(survival)} font-bold`)}</div>
+        <p className="text-[10px] text-gray-600">This report did not record every adjustment, so the lines above may not add up to the estimate.</p>
+      </div>
+    );
+  }
+  const adds = b.baseline - b.tier1 - b.tier2 - b.tier3 - b.tier4 === b.afterTiers;
+  return (
+    <div className="bg-white/3 rounded-2xl p-4 mb-4 space-y-2">
+      {line("base", "Baseline", `${b.baseline}%`, "text-white font-bold", b.baseline === 87 ? "Periapical lesion present" : "No periapical lesion")}
+      {b.tier1 > 0 && line("t1", "Tier 1: tooth and structure", `−${b.tier1}%`, "text-red-400")}
+      {b.tier2 > 0 && line("t2", "Tier 2: periodontal, hygiene, medical", `−${b.tier2}%`, "text-red-400")}
+      {b.tier3Raw > 0 && line("t3", "Tier 3: complications", `−${b.tier3}%`, b.tier3 > 0 ? "text-red-400" : "text-amber-400", b.tier3Capped ? `Would have been −${b.tier3Raw}%. It is capped so that tier 3 alone cannot take the tooth below its threshold.` : undefined)}
+      {b.tier4 > 0 && line("t4", "Tier 4: retreatment", `−${b.tier4}%`, "text-red-400")}
+      {b.floorOrCapApplied !== "none" && line("lim", "Limited to between 35% and 92%", `${b.afterLimits}%`, "text-amber-400", `The sum was ${b.afterTiers}%.`)}
+      {b.prosthodontic > 0 && line("pro", "Prosthodontic context", `−${b.prosthodontic}%`, "text-red-400", b.floorAfterProsthodontic ? "Applied after the limits. The estimate cannot go below 35%." : "Applied after the limits.")}
+      <div className="border-t border-white/10 pt-2">{line("fin", "Survival estimate", `${b.final}%`, `${finalTone(b.final)} font-bold`)}</div>
+      {(!adds || b.final !== survival) && <p className="text-[10px] text-red-400">These lines do not add up to the estimate shown. Do not use this report.</p>}
+      <p className="text-[10px] text-gray-600">The range shown with the estimate is a fixed ±3 points. It is not a confidence interval. Model {b.version || "epi-1.0"}.</p>
+    </div>
+  );
+}
+
 function Panel({ title, accent, children, conditional }: any) {
   if (conditional && !children) return null;
   return (
@@ -219,11 +265,11 @@ function InconsistencyAlert({ notes }: { notes: string[] }) {
   );
 }
 
-function CrownPrepResultCard({ crownPrep }: { crownPrep: string }) {
+function CrownPrepResultCard({ crownPrep, assumed }: { crownPrep: string; assumed?: boolean }) {
   const cfg = CROWN_PREP_DISPLAY[crownPrep] || CROWN_PREP_DISPLAY.minimal;
   return (
     <div className={`rounded-2xl p-5 mb-4 border ${cfg.bg} ${cfg.border}`}>
-      <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Crown Preparation Assessed</p>
+      <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">{assumed ? "Crown accessed in place: minimal preparation assumed" : "Crown Preparation Assessed"}</p>
       <p className={`text-lg font-black mb-1 ${cfg.color}`}>{cfg.label}</p>
       <p className="text-sm text-gray-400 mb-1">{cfg.sublabel}</p>
       <p className={`text-xs ${cfg.color}`}>{cfg.evidence}</p>
@@ -347,7 +393,7 @@ export default function ResultPage() {
   const crownAccessible = (result as any).crownAccessible;
   const crownRemoved = (result as any).crownRemoved;
   const crownPrep = (result as any).crownPrep ?? "minimal";
-  const showCrownPrep = (result as any).crownAssessmentPending !== true;
+  const showCrownPrep = restorationStatus === "crown" && ["minimal", "moderate", "aggressive"].includes(crownPrep) && (result as any).crownAssessmentPending !== true;
 
   // ════════════════════════════════════════════════════════════
   // SAVE CASE (WITH RADIOGRAPH REDIRECT)
@@ -389,6 +435,9 @@ export default function ResultPage() {
         type:         "endodecide",
         toolType:     result.toolType ?? "predictor",
         resultId:     result.resultId   ?? null,
+        engineVersion:  result.engineVersion ?? "epi-1.0",
+        breakdown:      result.breakdown ?? null,
+        advisedPathway: result.advisedPathway ?? "",
         generatedAt:  result.generatedAt ?? null,
         caseName:     caseName.trim(),
         phoneNumber:  phoneNumber.trim(),
@@ -619,7 +668,7 @@ export default function ResultPage() {
                 <SurvivalGauge value={survival} range={range} accent={accent} />
               </div>
               <div className="bg-white/3 rounded-2xl p-5 flex flex-col justify-between">
-                <p className="text-[10px] text-gray-500 tracking-[2px] uppercase mb-4">EP Points (Dental Prognosis Index)</p>
+                <p className="text-[10px] text-gray-500 tracking-[2px] uppercase mb-4">Endoprognosis Index (EPI)</p>
                 <DPIBar value={result.totalDPI ?? 0} />
               </div>
             </div>
@@ -650,7 +699,7 @@ export default function ResultPage() {
               {showTierBreakdown ? "Hide" : "Show"} score breakdown
             </button>
             {showTierBreakdown && (
-              <TierBreakdown
+              <BreakdownTable breakdown={(result as any).breakdown ? { ...(result as any).breakdown, version: (result as any).engineVersion } : undefined} survival={survival}
                 baseline={result.periapicalDiagnosis !== "Normal Apical Tissues" ? 87 : 92}
                 t1={result.tier1Deductions ?? 0}
                 t2={result.tier2Deductions ?? 0}
@@ -686,6 +735,15 @@ export default function ResultPage() {
               </div>
             )}
           </Panel>
+
+          {!isPractical && (
+            <div className="rounded-2xl border-2 border-red-500/30 bg-red-500/8 px-6 py-5">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Advice</p>
+              <p className="text-base font-bold text-red-400">Retention of this tooth is not advised</p>
+              <p className="text-sm text-gray-300 mt-1 leading-relaxed">The alternatives to discuss are extraction and the options for replacing the tooth.</p>
+              {result.overrideReason && <p className="text-xs text-gray-500 mt-2">Reason: {result.overrideReason}</p>}
+            </div>
+          )}
 
           {/* Panel 4: Affecting Factors */}
           {factors.length > 0 && (
@@ -734,7 +792,7 @@ export default function ResultPage() {
           {/* Panel 8: Coronal Structure */}
           {result.walls && (
             <Panel title="Coronal Structure Assessment" accent="#10b981">
-              {showCrownPrep && <CrownPrepResultCard crownPrep={crownPrep} />}
+              {showCrownPrep && <CrownPrepResultCard crownPrep={crownPrep} assumed={crownAccessible === "yes"} />}
               {showRestoLabel && !showCrownPrep && restorationStatus !== "crown" && (
                 <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border mb-4 ${restorationStatus === "endocrown" ? "bg-amber-500/8 border-amber-500/25" : "bg-violet-500/8 border-violet-500/20"}`}>
                   <div>

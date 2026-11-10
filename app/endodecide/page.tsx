@@ -204,6 +204,25 @@ function calcTier4(p: { rootTreated: boolean; existingObturation: ObturationQual
   return { tier4Deductions: d, isPostWithoutCrownOverride: isPWC, obturationNarrative: narrative, tier4Factors: f };
 }
 
+// Version of the scoring model. The scoring itself is unchanged. This only labels it, so every saved case
+// says which model produced it. If the scoring ever changes, change this and recompute older cases from their saved inputs.
+const ENGINE_VERSION = "epi-1.0";
+
+interface EpiBreakdown {
+  baseline: number;              // 92, or 87 with a periapical lesion
+  tier1: number;
+  tier2: number;
+  tier3Raw: number;              // what tier 3 would have deducted
+  tier3: number;                 // what it did deduct, after the cap that stops tier 3 alone taking the tooth below its threshold
+  tier3Capped: boolean;
+  tier4: number;
+  afterTiers: number;            // baseline minus the four tiers, before any limit
+  floorOrCapApplied: "floor" | "cap" | "none";
+  afterLimits: number;           // kept between 35 and 92
+  prosthodontic: number;         // deducted after the limits
+  floorAfterProsthodontic: boolean;
+  final: number;                 // the survival estimate shown
+}
 function calculatePrognosis(p: {
   toothNumber: string; walls: WallStates; occlusal: OcclusalState; remainingPercent: number;
   perio: string; oralHygiene: string; medical: string; endo: string;
@@ -211,12 +230,13 @@ function calculatePrognosis(p: {
   perforation: boolean; perfLocation: string; perfTime: string; prostho: string; periApical: boolean;
   rootTreated: boolean; existingObturation: ObturationQuality; restorationQuality: RestorationQuality;
   postWithoutCrown: PostWithoutCrown; previousAttempts: PreviousAttempts;
-}): { survival: number; survivalRange: [number,number]; totalDPI: number; isPractical: boolean; threshold: number; toothType: string; isImpracticalOverride: boolean; overrideReason: string; tier1Deductions: number; tier2Deductions: number; tier3Deductions: number; tier4Deductions: number; isPostWithoutCrownOverride: boolean; obturationNarrative: string; tier4Factors: string[] } {
+}): { breakdown: EpiBreakdown; engineVersion: string; survival: number; survivalRange: [number,number]; totalDPI: number; isPractical: boolean; threshold: number; toothType: string; isImpracticalOverride: boolean; overrideReason: string; tier1Deductions: number; tier2Deductions: number; tier3Deductions: number; tier4Deductions: number; isPostWithoutCrownOverride: boolean; obturationNarrative: string; tier4Factors: string[] } {
   const isA = ["11","12","13","21","22","23","31","32","33","41","42","43"].includes(p.toothNumber);
   const isP = ["14","15","24","25","34","35","44","45"].includes(p.toothNumber);
   const toothType = isA ? "Anterior" : isP ? "Premolar" : "Molar";
   const threshold = isA ? 55 : isP ? 60 : 65;
-  let survival = p.periApical ? 87 : 92;
+  const baseline = p.periApical ? 87 : 92;
+  let survival = baseline;
 
   let t1 = 0;
   if (!isA && !isP) t1 += 4; else if (!isA) t1 += 2;
@@ -242,11 +262,15 @@ function calculatePrognosis(p: {
 
   const r4 = calcTier4({ rootTreated: p.rootTreated, existingObturation: p.existingObturation, restorationQuality: p.restorationQuality, postWithoutCrown: p.postWithoutCrown, previousAttempts: p.previousAttempts });
 
-  survival = Math.round(survival - t1 - t2 - ct3 - r4.tier4Deductions);
+  const afterTiers = Math.round(survival - t1 - t2 - ct3 - r4.tier4Deductions);
+  survival = afterTiers;
   survival = Math.max(35, Math.min(92, survival));
+  const afterLimits = survival;
   const pv2 = parseInt(p.prostho) || 0;
   if (pv2 >= 6) survival -= 8; else if (pv2 >= 2) survival -= 3; else if (pv2 >= 1) survival -= 1;
   survival = Math.max(35, survival);
+  const prosthodontic = pv2 >= 6 ? 8 : pv2 >= 2 ? 3 : pv2 >= 1 ? 1 : 0;
+  const floorAfterProsthodontic = afterLimits - prosthodontic < 35;
 
   const isPractical = survival >= threshold;
   const isImp = ev === 10 && !isA;
@@ -259,6 +283,8 @@ function calculatePrognosis(p: {
     tier1Deductions: t1, tier2Deductions: t2, tier3Deductions: ct3,
     tier4Deductions: r4.tier4Deductions, isPostWithoutCrownOverride: r4.isPostWithoutCrownOverride,
     obturationNarrative: r4.obturationNarrative, tier4Factors: r4.tier4Factors,
+    engineVersion: ENGINE_VERSION,
+    breakdown: { baseline, tier1: t1, tier2: t2, tier3Raw: t3, tier3: ct3, tier3Capped: ct3 < t3, tier4: r4.tier4Deductions, afterTiers, floorOrCapApplied: afterTiers < 35 ? "floor" : afterTiers > 92 ? "cap" : "none", afterLimits, prosthodontic, floorAfterProsthodontic, final: survival },
   };
 }
 
@@ -902,6 +928,9 @@ export default function EndoDecide() {
         // Two different patients can share tooth number, diagnosis and
         // survival score, so those fields must never be used for that.
         resultId:makeResultId(),
+        engineVersion:prog.engineVersion,
+        breakdown:prog.breakdown,
+        advisedPathway:prog.isPractical?"":"Retention not advised. Extraction and replacement alternatives to be discussed.",
         generatedAt:new Date().toISOString(),
 
         toolType:crackConfirmed?"combined":"predictor",urgency,toothNumber:formData.toothNumber,toothType,gender:formData.gender,ageGroup:formData.ageGroup,
